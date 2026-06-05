@@ -2,7 +2,7 @@ class Smolvm < Formula
   desc "OCI-native microVM runtime for hardware-isolated local execution"
   homepage "https://github.com/smol-machines/smolvm"
   version "1.0.0"
-  license "Apache-2.0"
+  license all_of: ["Apache-2.0", "LGPL-2.1-only", "GPL-2.0-only"]
 
   on_macos do
     on_arm do
