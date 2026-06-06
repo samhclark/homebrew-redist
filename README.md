@@ -15,3 +15,9 @@ brew install samhclark/redist/<formula>
 | Formula | Upstream | Platforms |
 |---|---|---|
 | `smolvm` | [smol-machines/smolvm](https://github.com/smol-machines/smolvm) | macOS arm64, Linux arm64, Linux x86_64 |
+
+## Development
+
+The current smolvm source-build status, reproduction steps, remaining binary
+inputs, and GPU packaging notes are in
+[docs/smolvm-source-build.md](docs/smolvm-source-build.md).
