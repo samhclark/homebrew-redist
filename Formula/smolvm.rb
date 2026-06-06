@@ -205,8 +205,11 @@ class Smolvm < Formula
     kernel_path = ENV["PATH"].split(File::PATH_SEPARATOR)
                              .reject { |entry| entry == Superenv.shims_path.to_s }
                              .join(File::PATH_SEPARATOR)
+    kernel_library_path = [Formula["elfutils"].opt_lib, ENV["LD_LIBRARY_PATH"]]
+                          .compact
+                          .join(File::PATH_SEPARATOR)
     cc = DevelopmentTools.locate(DevelopmentTools.default_compiler)
-    with_env(PATH: kernel_path, CC: cc, HOSTCC: cc) do
+    with_env(PATH: kernel_path, LD_LIBRARY_PATH: kernel_library_path, CC: cc, HOSTCC: cc) do
       cd libkrunfw do
         system "make", "-j#{ENV.make_jobs}", "GUESTARCH=#{guest_arch}"
       end

@@ -76,6 +76,7 @@ BUILD_COMPLETE := $(STAGE_DIR)/.complete
 
 BREW_PATH = $(shell brew --prefix gpatch)/bin:$(shell brew --prefix flex)/bin:$(shell brew --prefix bison)/bin:$(PATH)
 BREW_PKG_CONFIG_PATH = $(shell brew --prefix elfutils)/lib/pkgconfig:$(shell brew --prefix openssl@3)/lib/pkgconfig:$(shell brew --prefix zlib-ng-compat)/lib/pkgconfig:$(shell brew --prefix zstd)/lib/pkgconfig
+BREW_LIBRARY_PATH = $(shell brew --prefix elfutils)/lib
 KERNEL_CC ?= $(shell command -v gcc || command -v clang)
 MKFS_EXT4 = $(shell brew --prefix e2fsprogs)/sbin/mkfs.ext4
 
@@ -220,6 +221,7 @@ ifeq ($(HOST_OS),Linux)
 	cd "$(LIBKRUNFW_SRC)" && env \
 	  PATH="$(BREW_PATH)" \
 	  PKG_CONFIG_PATH="$(BREW_PKG_CONFIG_PATH)$${PKG_CONFIG_PATH:+:$$PKG_CONFIG_PATH}" \
+	  LD_LIBRARY_PATH="$(BREW_LIBRARY_PATH)$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}" \
 	  PYTHONPATH="$(PYELFTOOLS_SRC)" \
 	  CC="$(KERNEL_CC)" \
 	  HOSTCC="$(KERNEL_CC)" \

@@ -208,6 +208,9 @@ PKG_CONFIG_PATH="$(brew --prefix elfutils)/lib/pkgconfig:\
 $(brew --prefix openssl@3)/lib/pkgconfig:\
 $(brew --prefix zlib-ng-compat)/lib/pkgconfig:\
 $(brew --prefix zstd)/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+
+LD_LIBRARY_PATH="$(brew --prefix elfutils)/lib\
+${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 ```
 
 Run `make` from inside the libkrunfw source directory:
@@ -225,6 +228,12 @@ Superenv removes the kernel's per-file `-O0` flag and adds `-O2`, causing
 `crypto/jitterentropy.c` to fail its intentional safety check. The Formula
 removes `Superenv.shims_path` from `PATH` and explicitly sets `CC` and `HOSTCC`
 to the real system compiler for this step.
+
+Using the real compiler also means kernel host tools do not receive Superenv's
+runtime library paths. `objtool` links against Homebrew's `libelf.so.1`, then
+must execute repeatedly during the kernel build. Keep the elfutils library
+directory in `LD_LIBRARY_PATH` for this build step or `objtool` will fail to
+start even though it linked successfully.
 
 ### smolvm
 
