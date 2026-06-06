@@ -17,6 +17,7 @@ if OS.linux?
   brew "gpatch"
   brew "openssl@3"
   brew "python@3.14"
+  brew "xz"
   brew "zlib-ng-compat"
   brew "zstd"
 end

@@ -23,6 +23,7 @@ class Smolvm < Formula
     depends_on "gpatch" => :build
     depends_on "openssl@3" => :build
     depends_on "python@3.14" => :build
+    depends_on "xz" => :build
     depends_on "zlib-ng-compat" => :build
     depends_on "zstd" => :build
 

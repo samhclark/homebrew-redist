@@ -139,6 +139,7 @@ Linux-only:
 - `gpatch`: GNU patch for libkrunfw's kernel patches.
 - `openssl@3`: kernel host-side crypto tooling.
 - `python@3.14`: runs libkrunfw's bundle generator.
+- `xz`: extracts the Linux kernel source archive.
 - `zlib-ng-compat`, `zstd`: transitive libelf compression dependencies that
   must be visible through pkg-config.
 
