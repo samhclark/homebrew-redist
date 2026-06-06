@@ -56,11 +56,11 @@ jobs:
 
       - name: Build and test changed formulae
         if: github.event_name == 'pull_request'
-        run: brew test-bot --only-formulae
+        run: brew test-bot --only-formulae --fail-fast
 
       - name: Build and test smolvm
         if: github.event_name != 'pull_request'
-        run: brew test-bot --only-formulae --testing-formulae=smolvm
+        run: brew test-bot --only-formulae --testing-formulae=smolvm --fail-fast
 
       - name: Upload bottles
         if: always()
