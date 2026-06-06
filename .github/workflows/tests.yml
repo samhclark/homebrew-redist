@@ -1,4 +1,4 @@
-name: Linux
+name: Homebrew
 
 on:
   push:
@@ -13,19 +13,27 @@ concurrency:
 
 jobs:
   test-bot:
-    name: brew test-bot (${{ matrix.arch }})
+    name: brew test-bot (${{ matrix.platform }})
     strategy:
       fail-fast: false
       matrix:
         include:
-          - arch: x86_64
+          - platform: linux-x86_64
             runner: ubuntu-24.04
+            container: ghcr.io/homebrew/brew:main
+            uname_os: Linux
             uname_arch: x86_64
-          - arch: arm64
+          - platform: linux-arm64
             runner: ubuntu-24.04-arm
+            container: ghcr.io/homebrew/brew:main
+            uname_os: Linux
             uname_arch: aarch64
+          - platform: macos-26-arm64
+            runner: macos-26
+            uname_os: Darwin
+            uname_arch: arm64
     runs-on: ${{ matrix.runner }}
-    container: ghcr.io/homebrew/brew:main
+    container: ${{ matrix.container }}
     timeout-minutes: 90
 
     permissions:
@@ -45,13 +53,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ steps.set-up-homebrew.outputs.gems-path }}
-          key: linux-${{ matrix.arch }}-rubygems-${{ steps.set-up-homebrew.outputs.gems-hash }}
+          key: ${{ matrix.platform }}-rubygems-${{ steps.set-up-homebrew.outputs.gems-hash }}
           restore-keys: |
-            linux-${{ matrix.arch }}-rubygems-
+            ${{ matrix.platform }}-rubygems-
 
       - name: Verify runner architecture
         run: |
-          test "$(uname -s)" = Linux
+          test "$(uname -s)" = "${{ matrix.uname_os }}"
           test "$(uname -m)" = "${{ matrix.uname_arch }}"
           df -h
 
@@ -76,7 +84,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: bottles-linux-${{ matrix.arch }}
+          name: bottles-${{ matrix.platform }}
           path: "*.bottle.*"
           if-no-files-found: ignore
           retention-days: 7

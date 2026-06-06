@@ -69,8 +69,9 @@ That build completed in 11 minutes 20 seconds. The installed package reported
 - Correct libkrunfw symlink chain ending at `libkrunfw.so.5.4.0`.
 - Sparse 512 MiB ext4 templates, using about 17 MiB of real disk each.
 
-This did not include a full KVM guest boot test. Linux arm64 CI has been added
-but has not yet completed successfully. macOS arm64 has not yet been tested.
+This did not include a full KVM guest boot test. Linux arm64 now passes the
+complete test-bot build, bottle reinstall, linkage, and Formula test sequence.
+macOS 26 arm64 CI has been added but has not yet completed successfully.
 
 ## Reproducing after a reboot
 
@@ -110,21 +111,22 @@ still has the older Formula. Sync the complete tap checkout, including
 ## Continuous integration
 
 `.github/workflows/tests.yml` runs Homebrew's `brew test-bot` on native
-GitHub-hosted Linux x86_64 and arm64 runners, using `ubuntu-24.04` and
-`ubuntu-24.04-arm` respectively. Both jobs use Homebrew's official container
-and setup action. The workflow runs for pull requests, pushes to `main`, and
-manual dispatches. It checks tap syntax, builds changed Formulae from source on
-pull requests, and always builds smolvm on `main` and manual runs. It runs the
-Formula tests and retains architecture-specific bottles as seven-day workflow
-artifacts.
+GitHub-hosted Linux x86_64, Linux arm64, and macOS 26 arm64 runners. The Linux
+jobs use `ubuntu-24.04` and `ubuntu-24.04-arm` with Homebrew's official
+container; the macOS job uses the native `macos-26` runner. All jobs use
+Homebrew's setup action. The workflow runs for pull requests, pushes to `main`,
+and manual dispatches. It checks tap syntax, builds changed Formulae from
+source on pull requests, and always builds smolvm on `main` and manual runs. It
+runs the Formula tests and retains platform-specific bottles as seven-day
+workflow artifacts.
 
 The workflow deliberately has read-only repository permissions and does not
-publish bottles. Add publishing only after the first Linux bottle has passed
-relocation checks and its generated bottle block has been reviewed.
+publish bottles. Add publishing only after the generated Linux bottle blocks
+have been reviewed and a release process has been defined.
 
-The workflow deliberately does not attempt a guest boot. KVM access through
-GitHub's hosted runner and Homebrew job container is not treated as a supported
-CI contract, so this job covers installation and the Formula's CLI test.
+The workflow deliberately does not attempt a guest boot. KVM and HVF access on
+GitHub-hosted runners are not treated as a supported CI contract, so these jobs
+cover installation and the Formula's CLI test.
 
 ## Build dependencies
 
@@ -394,14 +396,13 @@ virglrenderer pin will need regular security updates.
 
 ## Recommended next steps
 
-1. Confirm the native Linux arm64 workflow completes and inspect its generated
-   bottle.
-2. Extend CI to macOS arm64.
-3. Add a real VM boot smoke test where KVM/HVF runners permit it.
-4. Test macOS codesigning and rpath behavior.
-5. Bottle `smolvm-libkrunfw` before attempting broader refactoring.
-6. Prototype `smolvm-virglrenderer` using the slp tap Formula as a reference.
-7. Build `smolvm-libkrun` with `blk,net,gpu` against that Formula and run a
+1. Confirm the native macOS 26 arm64 workflow completes and inspect its
+   generated bottle.
+2. Add a real VM boot smoke test where KVM/HVF runners permit it.
+3. Test macOS codesigning and rpath behavior.
+4. Bottle `smolvm-libkrunfw` before attempting broader refactoring.
+5. Prototype `smolvm-virglrenderer` using the slp tap Formula as a reference.
+6. Build `smolvm-libkrun` with `blk,net,gpu` against that Formula and run a
    guest Vulkan smoke test.
 
 ## Reference sources
