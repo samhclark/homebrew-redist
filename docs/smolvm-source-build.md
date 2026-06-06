@@ -71,9 +71,10 @@ That build completed in 11 minutes 20 seconds. The installed package reported
 - Correct libkrunfw symlink chain ending at `libkrunfw.so.5.4.0`.
 - Sparse 512 MiB ext4 templates, using about 17 MiB of real disk each.
 
-This did not include a full KVM guest boot test. Linux arm64 now passes the
-complete test-bot build, bottle reinstall, linkage, and Formula test sequence.
-macOS 26 arm64 CI has been added but has not yet completed successfully.
+This did not include a full KVM guest boot test. Linux x86_64, Linux arm64, and
+macOS 26 arm64 all pass the complete test-bot build, bottle reinstall, linkage,
+and Formula test sequence. The successful three-platform run is
+<https://github.com/samhclark/homebrew-redist/actions/runs/27076010107>.
 
 ## Reproducing after a reboot
 
@@ -122,9 +123,32 @@ source on pull requests, and always builds smolvm on `main` and manual runs. It
 runs the Formula tests and retains platform-specific bottles as seven-day
 workflow artifacts.
 
-The workflow deliberately has read-only repository permissions and does not
-publish bottles. Add publishing only after the generated Linux bottle blocks
-have been reviewed and a release process has been defined.
+The test workflow deliberately has read-only repository permissions.
+`.github/workflows/publish.yml` is a separate, manually dispatched workflow
+that publishes the artifacts from a selected successful test run. It:
+
+1. Confirms the run used `tests.yml`, succeeded on `main`, and is an ancestor
+   of the current revision.
+2. Refuses to publish if `Formula/smolvm.rb` or its Cargo lockfile changed after
+   that run.
+3. Requires exactly the `x86_64_linux`, `arm64_linux`, and `arm64_tahoe`
+   bottles, all built from the selected revision.
+4. Runs Homebrew's `brew pr-upload`, which merges the bottle JSON into the
+   Formula, creates the `smolvm-<version>` GitHub release, and uploads the three
+   bottle archives.
+5. Pushes Homebrew's generated bottle-block commit to `main`.
+
+Publish within the test artifacts' seven-day retention window:
+
+```sh
+gh run list --workflow tests.yml --branch main --status success --limit 5
+gh workflow run publish.yml -f run_id=27076010107
+gh run watch
+```
+
+The workflow's `GITHUB_TOKEN` needs the repository's normal `contents: write`
+permission. The manual dispatch and source checks prevent routine pushes from
+republishing an existing version.
 
 The workflow deliberately does not attempt a guest boot. KVM and HVF access on
 GitHub-hosted runners are not treated as a supported CI contract, so these jobs
@@ -410,13 +434,11 @@ virglrenderer pin will need regular security updates.
 
 ## Recommended next steps
 
-1. Confirm the native macOS 26 arm64 workflow completes and inspect its
-   generated bottle.
-2. Add a real VM boot smoke test where KVM/HVF runners permit it.
-3. Test macOS codesigning and rpath behavior.
-4. Bottle `smolvm-libkrunfw` before attempting broader refactoring.
-5. Prototype `smolvm-virglrenderer` using the slp tap Formula as a reference.
-6. Build `smolvm-libkrun` with `blk,net,gpu` against that Formula and run a
+1. Publish the current three-platform v1.0.1 bottles with `publish.yml`.
+2. Add a local installed-Formula VM boot smoke test for KVM/HVF-capable hosts.
+3. Bottle `smolvm-libkrunfw` before attempting broader refactoring.
+4. Prototype `smolvm-virglrenderer` using the slp tap Formula as a reference.
+5. Build `smolvm-libkrun` with `blk,net,gpu` against that Formula and run a
    guest Vulkan smoke test.
 
 ## Reference sources
