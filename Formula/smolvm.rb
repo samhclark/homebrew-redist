@@ -43,6 +43,8 @@ class Smolvm < Formula
     end
   end
 
+  preserve_rpath
+
   resource "libkrun" do
     url "https://github.com/smol-machines/libkrun/archive/e85a254ac1a1a2be58fb5b54e10937fecc55d268.tar.gz"
     sha256 "627bddfe16be6b144a7582fea79fb2d87175df9927d3dfeffbcd4ce7d6d5b6b3"
@@ -93,7 +95,10 @@ class Smolvm < Formula
     if OS.linux?
       build_libkrunfw(libdir)
     else
-      libdir.install resource_root/"runtime/lib/libkrunfw.5.dylib"
+      libkrunfw = resource_root/"runtime/lib/libkrunfw.5.dylib"
+      MachO::Tools.change_dylib_id(libkrunfw, "@rpath/libkrunfw.5.dylib")
+      MachO.codesign!(libkrunfw)
+      libdir.install libkrunfw
       libdir.install_symlink "libkrunfw.5.dylib" => "libkrunfw.dylib"
       ENV["LIBKRUN_BUNDLE"] = libdir
     end
@@ -166,6 +171,11 @@ class Smolvm < Formula
     assert_match "smolvm", shell_output("#{bin}/smolvm --help")
     assert_path_exists libexec/"init.krun"
     assert_match "./init.krun", shell_output("tar -tf #{libexec}/agent-rootfs.tar")
+    if OS.mac?
+      libkrunfw = libexec/"lib/libkrunfw.5.dylib"
+      assert_equal "@rpath/libkrunfw.5.dylib", MachO.open(libkrunfw).dylib_id
+      system "codesign", "--verify", libkrunfw
+    end
   end
 
   private

@@ -231,6 +231,8 @@ ifeq ($(HOST_OS),Linux)
 	ln -sfn "libkrunfw.so.5" "$(STAGE_DIR)/lib/libkrunfw.so"
 else
 	cp "$(RUNTIME_SRC)/lib/libkrunfw.5.dylib" "$(STAGE_DIR)/lib/"
+	install_name_tool -id "@rpath/libkrunfw.5.dylib" "$(STAGE_DIR)/lib/libkrunfw.5.dylib"
+	codesign --force --sign - "$(STAGE_DIR)/lib/libkrunfw.5.dylib"
 	ln -sfn "libkrunfw.5.dylib" "$(STAGE_DIR)/lib/libkrunfw.dylib"
 endif
 	touch "$@"

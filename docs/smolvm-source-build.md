@@ -21,6 +21,8 @@ binary archive to building the host-side software from pinned source:
 - On macOS arm64, `libkrunfw.5.dylib` also remains sourced from the release
   archive because its Linux guest kernel cannot be built natively on macOS
   without an existing VM or cross-build arrangement.
+- The release dylib's install ID is normalized to
+  `@rpath/libkrunfw.5.dylib` and ad-hoc signed before installation.
 
 The generated Cargo lockfile is committed at
 `Resources/smolvm/Cargo.lock`. Upstream v1.0.1 does not include one.
@@ -263,6 +265,18 @@ them for host executables and reports missing and unwanted system libraries.
 smolvm v1.0.1 already supports `SMOLVM_AGENT_ROOTFS_TAR`, including
 content-versioned, atomic extraction into the user's cache, so no custom
 extraction code is needed in the tap.
+
+### macOS libkrunfw bottle relocation
+
+The upstream `libkrunfw.5.dylib` has only enough Mach-O header space for its
+original short install ID. If Homebrew rewrites it to an absolute `opt` path
+during installation, creating a bottle later fails because the longer
+`@@HOMEBREW_PREFIX@@` relocation placeholder no longer fits in the header.
+
+Before installing the dylib, the Formula changes its ID to
+`@rpath/libkrunfw.5.dylib` and applies a new ad-hoc signature. The Formula's
+`preserve_rpath` declaration keeps that compact ID unchanged through install
+and bottle relocation.
 
 ## Remaining binary bootstrap
 
