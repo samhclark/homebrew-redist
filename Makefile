@@ -23,6 +23,10 @@ SOURCE_DIR := $(BUILD_DIR)/src
 TARGET_DIR := $(BUILD_DIR)/target
 STAGE_DIR := $(BUILD_DIR)/stage
 CARGO_HOME := $(BUILD_DIR)/cargo-home
+SMOLVM_BIN ?= $(shell prefix="$$(brew --prefix smolvm 2>/dev/null)" && printf '%s/bin/smolvm' "$$prefix")
+SMOKE_TIMEOUT ?= 120
+SMOKE_GUEST_TIMEOUT ?= 60s
+SMOKE_MARKER := smolvm-boot-smoke-ok
 
 SMOLVM_ARCHIVE := $(DOWNLOAD_DIR)/smolvm-$(SMOLVM_VERSION).tar.gz
 LIBKRUN_ARCHIVE := $(DOWNLOAD_DIR)/libkrun-$(LIBKRUN_REV).tar.gz
@@ -86,7 +90,8 @@ FETCH_ARCHIVES += $(LIBKRUNFW_ARCHIVE) $(KERNEL_ARCHIVE) $(PYELFTOOLS_ARCHIVE)
 endif
 
 .PHONY: help deps fetch verify prepare build build-init build-libkrun
-.PHONY: build-libkrunfw build-smolvm stage check formula-check clean
+.PHONY: build-libkrunfw build-smolvm stage check formula-check smoke-installed
+.PHONY: clean
 
 help:
 	@printf '%s\n' \
@@ -98,6 +103,7 @@ help:
 	  '  make build         Recreate the proven CPU-only distribution in .build/stage' \
 	  '  make check         Inspect the manually built artifacts' \
 	  '  make formula-check Run style, audit, and the installed Formula test' \
+	  '  make smoke-installed Boot the Homebrew-installed smolvm and run a guest command' \
 	  '  make clean         Remove generated .build state' \
 	  '' \
 	  'The build is intentionally GPU-disabled. See docs/smolvm-source-build.md.'
@@ -297,6 +303,46 @@ formula-check:
 	env HOMEBREW_CACHE="$(BUILD_DIR)/homebrew-cache" HOMEBREW_NO_AUTO_UPDATE=1 \
 	  HOMEBREW_NO_INSTALL_FROM_API=1 \
 	  brew test samhclark/redist/smolvm
+
+smoke-installed:
+	@test -x "$(SMOLVM_BIN)" || { \
+	  printf 'smolvm is not installed by Homebrew; run brew install samhclark/redist/smolvm\n' >&2; \
+	  exit 1; \
+	}
+	@if [[ "$(HOST_OS)" == "Linux" ]]; then \
+	  test -c /dev/kvm || { printf '/dev/kvm is unavailable\n' >&2; exit 1; }; \
+	  test -r /dev/kvm && test -w /dev/kvm || { \
+	    printf '/dev/kvm is not readable and writable by this user\n' >&2; \
+	    exit 1; \
+	  }; \
+	fi
+	@tmpdir="$$(mktemp -d)"; \
+	trap 'rm -rf "$$tmpdir"' EXIT; \
+	mkdir -p "$$tmpdir/home"; \
+	host_timeout=(); \
+	if command -v timeout >/dev/null; then \
+	  host_timeout=(timeout "$(SMOKE_TIMEOUT)"); \
+	fi; \
+	if output="$$(env \
+	  HOME="$$tmpdir/home" \
+	  XDG_CACHE_HOME="$$tmpdir/cache" \
+	  XDG_DATA_HOME="$$tmpdir/data" \
+	  "$${host_timeout[@]}" "$(SMOLVM_BIN)" machine run \
+	    --cpus 1 --mem 512 --timeout "$(SMOKE_GUEST_TIMEOUT)" \
+	    -- echo "$(SMOKE_MARKER)" 2>&1)"; then \
+	  status=0; \
+	else \
+	  status=$$?; \
+	fi; \
+	printf '%s\n' "$$output"; \
+	if [[ $$status -ne 0 ]]; then \
+	  printf 'smolvm VM smoke test failed with exit status %s\n' "$$status" >&2; \
+	  exit "$$status"; \
+	fi; \
+	grep -Fq -- "$(SMOKE_MARKER)" <<<"$$output" || { \
+	  printf 'smolvm VM smoke marker was not returned by the guest\n' >&2; \
+	  exit 1; \
+	}
 
 clean:
 	rm -rf "$(BUILD_DIR)"

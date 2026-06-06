@@ -71,9 +71,11 @@ That build completed in 11 minutes 20 seconds. The installed package reported
 - Correct libkrunfw symlink chain ending at `libkrunfw.so.5.4.0`.
 - Sparse 512 MiB ext4 templates, using about 17 MiB of real disk each.
 
-This did not include a full KVM guest boot test. Linux x86_64, Linux arm64, and
-macOS 26 arm64 all pass the complete test-bot build, bottle reinstall, linkage,
-and Formula test sequence. The successful three-platform run is
+The installed Linux x86_64 Formula now also passes a local KVM guest boot test:
+its bundled bare Alpine guest booted and returned the expected marker from an
+`echo` command. Linux x86_64, Linux arm64, and macOS 26 arm64 all pass the
+complete test-bot build, bottle reinstall, linkage, and Formula test sequence.
+The successful three-platform run is
 <https://github.com/samhclark/homebrew-redist/actions/runs/27076010107>.
 
 ## Reproducing after a reboot
@@ -106,10 +108,32 @@ The manual Makefile is primarily a diagnostic and handoff tool. The Formula
 remains the authoritative packaging implementation.
 
 `make formula-check` styles the local Formula, then compares it with the
-Formula in `brew --repo samhclark/redist` before running audit and test. It
-currently stops at that comparison because Homebrew's registered tap clone
-still has the older Formula. Sync the complete tap checkout, including
-`Resources/smolvm/Cargo.lock`, before using that target.
+Formula in `brew --repo samhclark/redist` before running audit and test. The
+registered tap copy on this machine currently matches and passes. After
+retapping or resetting that checkout, sync the complete tap, including
+`Resources/smolvm/Cargo.lock`, before using the target or rebuilding.
+
+After installing or upgrading the Formula on a KVM/HVF-capable development
+host, run the end-to-end guest boot smoke test:
+
+```sh
+make smoke-installed
+```
+
+This resolves the Homebrew-installed `smolvm`, checks `/dev/kvm` access on
+Linux, and boots the bundled bare Alpine guest with one vCPU and 512 MiB of
+memory. The guest must return `smolvm-boot-smoke-ok`. It does not pull an OCI
+image or enable guest networking, and it isolates cache/data state under a
+temporary home that is removed afterward.
+
+GNU `timeout` is used as a 120-second outer guard when available; smolvm's own
+60-second guest-command timeout is always used. Override the defaults when
+diagnosing a slower host:
+
+```sh
+make smoke-installed SMOLVM_BIN=/path/to/smolvm \
+  SMOKE_TIMEOUT=240 SMOKE_GUEST_TIMEOUT=120s
+```
 
 ## Continuous integration
 
@@ -150,9 +174,10 @@ The workflow's `GITHUB_TOKEN` needs the repository's normal `contents: write`
 permission. The manual dispatch and source checks prevent routine pushes from
 republishing an existing version.
 
-The workflow deliberately does not attempt a guest boot. KVM and HVF access on
-GitHub-hosted runners are not treated as a supported CI contract, so these jobs
-cover installation and the Formula's CLI test.
+The workflows deliberately do not attempt a guest boot. KVM and HVF access on
+GitHub-hosted runners are not treated as a supported CI contract, so CI covers
+installation and the Formula's CLI test; `make smoke-installed` covers a real
+guest boot on the maintainer's development host.
 
 ## Build dependencies
 
@@ -435,7 +460,7 @@ virglrenderer pin will need regular security updates.
 ## Recommended next steps
 
 1. Publish the current three-platform v1.0.1 bottles with `publish.yml`.
-2. Add a local installed-Formula VM boot smoke test for KVM/HVF-capable hosts.
+2. Run `make smoke-installed` after each local version upgrade.
 3. Bottle `smolvm-libkrunfw` before attempting broader refactoring.
 4. Prototype `smolvm-virglrenderer` using the slp tap Formula as a reference.
 5. Build `smolvm-libkrun` with `blk,net,gpu` against that Formula and run a
