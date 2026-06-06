@@ -1,0 +1,72 @@
+name: Linux x86_64
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-bot:
+    name: brew test-bot
+    runs-on: ubuntu-24.04
+    container: ghcr.io/homebrew/brew:main
+    timeout-minutes: 90
+
+    permissions:
+      actions: read
+      checks: read
+      contents: read
+      pull-requests: read
+
+    steps:
+      - name: Set up Homebrew
+        id: set-up-homebrew
+        uses: Homebrew/actions/setup-homebrew@main
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Cache Homebrew Bundler RubyGems
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.set-up-homebrew.outputs.gems-path }}
+          key: linux-x86_64-rubygems-${{ steps.set-up-homebrew.outputs.gems-hash }}
+          restore-keys: |
+            linux-x86_64-rubygems-
+
+      - name: Verify runner architecture
+        run: |
+          test "$(uname -s)" = Linux
+          test "$(uname -m)" = x86_64
+          df -h
+
+      - name: Clean up runner
+        run: brew test-bot --only-cleanup-before
+
+      - name: Set up test-bot
+        run: brew test-bot --only-setup
+
+      - name: Check tap syntax
+        run: brew test-bot --only-tap-syntax
+
+      - name: Build and test changed formulae
+        if: github.event_name == 'pull_request'
+        run: brew test-bot --only-formulae
+
+      - name: Build and test smolvm
+        if: github.event_name != 'pull_request'
+        run: brew test-bot --only-formulae --testing-formulae=smolvm
+
+      - name: Upload bottles
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bottles-linux-x86_64
+          path: "*.bottle.*"
+          if-no-files-found: ignore
+          retention-days: 7

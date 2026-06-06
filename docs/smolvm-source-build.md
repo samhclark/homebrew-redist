@@ -104,6 +104,23 @@ currently stops at that comparison because Homebrew's registered tap clone
 still has the older Formula. Sync the complete tap checkout, including
 `Resources/smolvm/Cargo.lock`, before using that target.
 
+## Continuous integration
+
+`.github/workflows/tests.yml` runs Homebrew's `brew test-bot` on the
+`ubuntu-24.04` x86_64 GitHub-hosted runner, using Homebrew's official container
+and setup action. It runs for pull requests, pushes to `main`, and manual
+dispatches. It checks tap syntax, builds changed Formulae from source on pull
+requests, and always builds smolvm on `main` and manual runs. It runs the
+Formula tests and retains generated bottles as seven-day workflow artifacts.
+
+The workflow deliberately has read-only repository permissions and does not
+publish bottles. Add publishing only after the first Linux bottle has passed
+relocation checks and its generated bottle block has been reviewed.
+
+The workflow deliberately does not attempt a guest boot. KVM access through
+GitHub's hosted runner and Homebrew job container is not treated as a supported
+CI contract, so this job covers installation and the Formula's CLI test.
+
 ## Build dependencies
 
 The exact Homebrew dependencies are recorded in `Brewfile`.
@@ -354,9 +371,8 @@ virglrenderer pin will need regular security updates.
 
 ## Recommended next steps
 
-1. Commit the current Formula, Cargo lockfile, Brewfile, Makefile, and this
-   handoff together, leaving unrelated `reproduce.sh` ownership clear.
-2. Add CI builds for Linux x86_64, Linux arm64, and macOS arm64.
+1. Confirm the Linux x86_64 workflow completes and inspect its generated bottle.
+2. Extend CI to Linux arm64 and macOS arm64.
 3. Add a real VM boot smoke test where KVM/HVF runners permit it.
 4. Test macOS codesigning and rpath behavior.
 5. Bottle `smolvm-libkrunfw` before attempting broader refactoring.

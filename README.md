@@ -1,5 +1,7 @@
 # homebrew-redist
 
+[![Linux x86_64](https://github.com/samhclark/homebrew-redist/actions/workflows/tests.yml/badge.svg)](https://github.com/samhclark/homebrew-redist/actions/workflows/tests.yml)
+
 Personal [Homebrew](https://brew.sh) tap that redistributes software not available in homebrew-core — either because the upstream ships no Homebrew formula at all, or because it only targets macOS and I want a Linux build too.
 
 ## Usage
