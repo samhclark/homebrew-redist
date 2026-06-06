@@ -69,8 +69,8 @@ That build completed in 11 minutes 20 seconds. The installed package reported
 - Correct libkrunfw symlink chain ending at `libkrunfw.so.5.4.0`.
 - Sparse 512 MiB ext4 templates, using about 17 MiB of real disk each.
 
-This did not include a full KVM guest boot test. Linux arm64 and macOS arm64
-have not yet been tested.
+This did not include a full KVM guest boot test. Linux arm64 CI has been added
+but has not yet completed successfully. macOS arm64 has not yet been tested.
 
 ## Reproducing after a reboot
 
@@ -109,12 +109,14 @@ still has the older Formula. Sync the complete tap checkout, including
 
 ## Continuous integration
 
-`.github/workflows/tests.yml` runs Homebrew's `brew test-bot` on the
-`ubuntu-24.04` x86_64 GitHub-hosted runner, using Homebrew's official container
-and setup action. It runs for pull requests, pushes to `main`, and manual
-dispatches. It checks tap syntax, builds changed Formulae from source on pull
-requests, and always builds smolvm on `main` and manual runs. It runs the
-Formula tests and retains generated bottles as seven-day workflow artifacts.
+`.github/workflows/tests.yml` runs Homebrew's `brew test-bot` on native
+GitHub-hosted Linux x86_64 and arm64 runners, using `ubuntu-24.04` and
+`ubuntu-24.04-arm` respectively. Both jobs use Homebrew's official container
+and setup action. The workflow runs for pull requests, pushes to `main`, and
+manual dispatches. It checks tap syntax, builds changed Formulae from source on
+pull requests, and always builds smolvm on `main` and manual runs. It runs the
+Formula tests and retains architecture-specific bottles as seven-day workflow
+artifacts.
 
 The workflow deliberately has read-only repository permissions and does not
 publish bottles. Add publishing only after the first Linux bottle has passed
@@ -392,8 +394,9 @@ virglrenderer pin will need regular security updates.
 
 ## Recommended next steps
 
-1. Confirm the Linux x86_64 workflow completes and inspect its generated bottle.
-2. Extend CI to Linux arm64 and macOS arm64.
+1. Confirm the native Linux arm64 workflow completes and inspect its generated
+   bottle.
+2. Extend CI to macOS arm64.
 3. Add a real VM boot smoke test where KVM/HVF runners permit it.
 4. Test macOS codesigning and rpath behavior.
 5. Bottle `smolvm-libkrunfw` before attempting broader refactoring.

@@ -1,4 +1,4 @@
-name: Linux x86_64
+name: Linux
 
 on:
   push:
@@ -13,8 +13,18 @@ concurrency:
 
 jobs:
   test-bot:
-    name: brew test-bot
-    runs-on: ubuntu-24.04
+    name: brew test-bot (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+            uname_arch: x86_64
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            uname_arch: aarch64
+    runs-on: ${{ matrix.runner }}
     container: ghcr.io/homebrew/brew:main
     timeout-minutes: 90
 
@@ -35,14 +45,14 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ steps.set-up-homebrew.outputs.gems-path }}
-          key: linux-x86_64-rubygems-${{ steps.set-up-homebrew.outputs.gems-hash }}
+          key: linux-${{ matrix.arch }}-rubygems-${{ steps.set-up-homebrew.outputs.gems-hash }}
           restore-keys: |
-            linux-x86_64-rubygems-
+            linux-${{ matrix.arch }}-rubygems-
 
       - name: Verify runner architecture
         run: |
           test "$(uname -s)" = Linux
-          test "$(uname -m)" = x86_64
+          test "$(uname -m)" = "${{ matrix.uname_arch }}"
           df -h
 
       - name: Clean up runner
@@ -66,7 +76,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: bottles-linux-x86_64
+          name: bottles-linux-${{ matrix.arch }}
           path: "*.bottle.*"
           if-no-files-found: ignore
           retention-days: 7
