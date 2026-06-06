@@ -252,12 +252,18 @@ stage: $(BUILD_COMPLETE)
 $(BUILD_COMPLETE): $(SMOLVM_OUTPUT)
 	cp "$(SMOLVM_OUTPUT)" "$(STAGE_DIR)/smolvm-bin"
 	cp "$(SMOLVM_SRC)/scripts/smolvm-wrapper.sh" "$(STAGE_DIR)/smolvm"
+	perl -pi -e 's/SMOLVM_BUNDLED_ROOTFS/SMOLVM_BUNDLED_ROOTFS_TAR/g; \
+	  s/agent-rootfs"/agent-rootfs.tar"/g; \
+	  s/\[\[ -d "\$$SMOLVM_BUNDLED_ROOTFS_TAR" \]\]/[[ -f "$$SMOLVM_BUNDLED_ROOTFS_TAR" ]]/g; \
+	  s/SMOLVM_AGENT_ROOTFS/SMOLVM_AGENT_ROOTFS_TAR/g' "$(STAGE_DIR)/smolvm"
 	chmod 0755 "$(STAGE_DIR)/smolvm" "$(STAGE_DIR)/smolvm-bin"
-	rm -rf "$(STAGE_DIR)/agent-rootfs"
+	rm -rf "$(STAGE_DIR)/agent-rootfs" "$(STAGE_DIR)/agent-rootfs.tar"
 	cp -a "$(RUNTIME_SRC)/agent-rootfs" "$(STAGE_DIR)/agent-rootfs"
 	cp "$(INIT_KRUN)" "$(STAGE_DIR)/init.krun"
 	cp "$(INIT_KRUN)" "$(STAGE_DIR)/agent-rootfs/init.krun"
 	chmod 0755 "$(STAGE_DIR)/init.krun" "$(STAGE_DIR)/agent-rootfs/init.krun"
+	tar -cpf "$(STAGE_DIR)/agent-rootfs.tar" -C "$(STAGE_DIR)/agent-rootfs" .
+	rm -rf "$(STAGE_DIR)/agent-rootfs"
 	dd if=/dev/zero of="$(STAGE_DIR)/storage-template.ext4" bs=1 count=0 seek=536870912 2>/dev/null
 	"$(MKFS_EXT4)" -F -q -m 0 -L smolvm "$(STAGE_DIR)/storage-template.ext4"
 	dd if=/dev/zero of="$(STAGE_DIR)/overlay-template.ext4" bs=1 count=0 seek=536870912 2>/dev/null
@@ -267,7 +273,8 @@ $(BUILD_COMPLETE): $(SMOLVM_OUTPUT)
 check: $(BUILD_COMPLETE)
 	"$(STAGE_DIR)/smolvm" --version
 	file "$(STAGE_DIR)/smolvm-bin" "$(STAGE_DIR)/init.krun" \
-	  "$(STAGE_DIR)/agent-rootfs/init.krun" "$(STAGE_DIR)/lib/$(LIBKRUN_NAME)"
+	  "$(STAGE_DIR)/lib/$(LIBKRUN_NAME)"
+	tar -tf "$(STAGE_DIR)/agent-rootfs.tar" | grep -Fx './init.krun'
 	ls -l "$(STAGE_DIR)/lib"
 	du -h "$(STAGE_DIR)/storage-template.ext4" "$(STAGE_DIR)/overlay-template.ext4"
 

@@ -16,6 +16,8 @@ binary archive to building the host-side software from pinned source:
 - `init.krun` is built as a static guest-architecture ELF with Zig.
 - The storage and overlay ext4 templates are generated during installation.
 - The v1.0.1 release archive remains as a bootstrap for the Alpine guest rootfs.
+- The guest rootfs is stored as `agent-rootfs.tar` in the keg. Upstream smolvm
+  extracts it atomically into the user's cache on first use.
 - On macOS arm64, `libkrunfw.5.dylib` also remains sourced from the release
   archive because its Linux guest kernel cannot be built natively on macOS
   without an existing VM or cross-build arrangement.
@@ -55,8 +57,9 @@ That build completed in 11 minutes 20 seconds. The installed package reported
 - `brew style Formula/smolvm.rb`
 - `brew audit --strict --formula samhclark/redist/smolvm`
 - `brew test samhclark/redist/smolvm`
-- Native x86-64 architecture for `smolvm-bin`, both installed `init.krun`
-  copies, libkrun, libkrunfw, and the guest agent.
+- `brew linkage --test samhclark/redist/smolvm`
+- Native x86-64 architecture for `smolvm-bin`, the installed and archived
+  `init.krun` copies, libkrun, libkrunfw, and the guest agent.
 - Static linkage for `init.krun`.
 - libkrun SONAME `libkrun.so.1`.
 - Required fork-specific symbols:
@@ -248,6 +251,14 @@ The source is patched to search beside the running `smolvm-bin` for
 The built init is also copied into the bundled agent rootfs. This avoids the
 same problem for the normal bundled-rootfs path and replaces the incorrect
 release init.
+
+The Formula archives that rootfs rather than installing its directory tree
+directly into the keg. Its Alpine executables are guest binaries linked against
+musl and guest libraries; if installed unpacked, `brew linkage --test` mistakes
+them for host executables and reports missing and unwanted system libraries.
+smolvm v1.0.1 already supports `SMOLVM_AGENT_ROOTFS_TAR`, including
+content-versioned, atomic extraction into the user's cache, so no custom
+extraction code is needed in the tap.
 
 ## Remaining binary bootstrap
 

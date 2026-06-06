@@ -110,9 +110,20 @@ class Smolvm < Formula
     cp init_krun, agent_init
     chmod 0755, agent_init
 
+    inreplace "scripts/smolvm-wrapper.sh",
+              'SMOLVM_BUNDLED_ROOTFS="$SCRIPT_DIR/agent-rootfs"',
+              'SMOLVM_BUNDLED_ROOTFS_TAR="$SCRIPT_DIR/agent-rootfs.tar"'
+    inreplace "scripts/smolvm-wrapper.sh",
+              'if [[ -d "$SMOLVM_BUNDLED_ROOTFS" ]]; then',
+              'if [[ -f "$SMOLVM_BUNDLED_ROOTFS_TAR" ]]; then'
+    inreplace "scripts/smolvm-wrapper.sh",
+              'export SMOLVM_AGENT_ROOTFS="${SMOLVM_AGENT_ROOTFS:-$SMOLVM_BUNDLED_ROOTFS}"',
+              'export SMOLVM_AGENT_ROOTFS_TAR="${SMOLVM_AGENT_ROOTFS_TAR:-$SMOLVM_BUNDLED_ROOTFS_TAR}"'
+
     libexec.install smolvm_bin => "smolvm-bin"
     libexec.install "scripts/smolvm-wrapper.sh" => "smolvm"
-    libexec.install resource_root/"runtime/agent-rootfs"
+    system "tar", "-cpf", libexec/"agent-rootfs.tar",
+                  "-C", resource_root/"runtime/agent-rootfs", "."
     libexec.install init_krun => "init.krun"
     chmod 0755, libexec/"smolvm"
 
@@ -154,6 +165,7 @@ class Smolvm < Formula
     assert_match version.to_s, shell_output("#{bin}/smolvm --version")
     assert_match "smolvm", shell_output("#{bin}/smolvm --help")
     assert_path_exists libexec/"init.krun"
+    assert_match "./init.krun", shell_output("tar -tf #{libexec}/agent-rootfs.tar")
   end
 
   private
