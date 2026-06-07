@@ -1,0 +1,34 @@
+FROM registry.fedoraproject.org/fedora:42 AS build
+
+RUN dnf -y --setopt=install_weak_deps=False install \
+      gcc \
+      spirv-tools \
+      vulkan-loader-devel \
+    && dnf clean all
+
+WORKDIR /src
+COPY compute.comp.spvasm smolvm-vulkan-compute.c ./
+
+RUN spirv-as --target-env vulkan1.0 compute.comp.spvasm -o compute.spv \
+    && spirv-val --target-env vulkan1.0 compute.spv \
+    && gcc -std=c11 -O2 -Wall -Wextra -Werror \
+      smolvm-vulkan-compute.c -o smolvm-vulkan-compute -lvulkan
+
+FROM registry.fedoraproject.org/fedora:42
+
+LABEL org.opencontainers.image.title="smolvm Vulkan compute smoke"
+LABEL org.opencontainers.image.description="Fedora/Mesa Venus image for smolvm GPU validation"
+LABEL org.opencontainers.image.source="https://github.com/samhclark/homebrew-redist"
+
+RUN dnf -y --setopt=install_weak_deps=False install dnf-plugins-core \
+    && dnf -y copr enable slp/mesa-libkrun-vulkan \
+    && dnf -y --setopt=install_weak_deps=False install \
+      mesa-vulkan-drivers \
+      vulkan-loader \
+    && dnf clean all \
+    && rm -rf /var/cache/dnf
+
+COPY --from=build /src/smolvm-vulkan-compute /usr/local/bin/smolvm-vulkan-compute
+COPY --from=build /src/compute.spv /usr/libexec/smolvm-vulkan-smoke/compute.spv
+
+ENTRYPOINT ["/usr/local/bin/smolvm-vulkan-compute"]

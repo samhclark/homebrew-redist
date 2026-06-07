@@ -1,0 +1,47 @@
+; SPIR-V
+; Version: 1.0
+; Generator: hand-written
+; Bound: 31
+; Schema: 0
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %main "main" %global_invocation_id
+               OpExecutionMode %main LocalSize 64 1 1
+               OpSource GLSL 450
+               OpName %main "main"
+               OpName %global_invocation_id "gl_GlobalInvocationID"
+               OpName %data "data"
+               OpName %Data "Data"
+               OpMemberName %Data 0 "values"
+               OpDecorate %global_invocation_id BuiltIn GlobalInvocationId
+               OpDecorate %values ArrayStride 4
+               OpMemberDecorate %Data 0 Offset 0
+               OpDecorate %Data BufferBlock
+               OpDecorate %data DescriptorSet 0
+               OpDecorate %data Binding 0
+       %void = OpTypeVoid
+    %function = OpTypeFunction %void
+       %uint = OpTypeInt 32 0
+      %v3uint = OpTypeVector %uint 3
+%input_v3uint = OpTypePointer Input %v3uint
+%input_uint = OpTypePointer Input %uint
+     %values = OpTypeRuntimeArray %uint
+       %Data = OpTypeStruct %values
+%uniform_Data = OpTypePointer Uniform %Data
+%uniform_uint = OpTypePointer Uniform %uint
+%global_invocation_id = OpVariable %input_v3uint Input
+       %data = OpVariable %uniform_Data Uniform
+     %uint_0 = OpConstant %uint 0
+     %uint_3 = OpConstant %uint 3
+     %uint_7 = OpConstant %uint 7
+       %main = OpFunction %void None %function
+      %entry = OpLabel
+  %index_ptr = OpAccessChain %input_uint %global_invocation_id %uint_0
+      %index = OpLoad %uint %index_ptr
+  %value_ptr = OpAccessChain %uniform_uint %data %uint_0 %index
+      %value = OpLoad %uint %value_ptr
+    %tripled = OpIMul %uint %value %uint_3
+     %result = OpIAdd %uint %tripled %uint_7
+               OpStore %value_ptr %result
+               OpReturn
+               OpFunctionEnd

@@ -1,0 +1,64 @@
+name: Vulkan smoke image
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/vulkan-smoke-image.yml"
+      - "Resources/vulkan-smoke/**"
+  workflow_dispatch:
+
+concurrency:
+  group: vulkan-smoke-image-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    name: build and publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out tap
+        uses: actions/checkout@v6
+
+      - name: Build image with Buildah
+        id: build-image
+        uses: redhat-actions/buildah-build@v2
+        with:
+          image: ${{ github.repository_owner }}/smolvm-vulkan-smoke
+          tags: |
+            main
+            sha-${{ github.sha }}
+          context: Resources/vulkan-smoke
+          containerfiles: Resources/vulkan-smoke/Containerfile
+          oci: true
+          platform: linux/amd64
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+
+      - name: Push image to GHCR
+        id: push-image
+        uses: redhat-actions/push-to-registry@v2
+        with:
+          image: ${{ steps.build-image.outputs.image }}
+          tags: ${{ steps.build-image.outputs.tags }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Record image digest
+        run: |
+          {
+            echo "### Vulkan smoke image"
+            echo
+            echo '```text'
+            echo "${{ steps.push-image.outputs.registry-path }}@${{ steps.push-image.outputs.digest }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
