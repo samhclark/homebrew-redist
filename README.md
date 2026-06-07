@@ -17,6 +17,7 @@ brew install samhclark/redist/<formula>
 | Formula | Upstream | Platforms |
 |---|---|---|
 | `smolvm` | [smol-machines/smolvm](https://github.com/smol-machines/smolvm) | macOS arm64, Linux arm64, Linux x86_64 |
+| `smolvm-virglrenderer` | [virglrenderer](https://gitlab.freedesktop.org/virgl/virglrenderer) | Linux arm64, Linux x86_64 |
 
 ## Development
 

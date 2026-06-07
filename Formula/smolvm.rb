@@ -167,8 +167,8 @@ class Smolvm < Formula
       is bootstrapped from the matching upstream release because constructing it
       requires networked Alpine package installation during the build.
 
-      GPU acceleration is not included because libkrun's GPU support requires
-      virglrenderer, which is not available in Homebrew.
+      GPU acceleration is not included. This tap packages virglrenderer on
+      Linux, but smolvm's libkrun build does not enable its GPU feature yet.
 
       #{platform_notes}
     EOS

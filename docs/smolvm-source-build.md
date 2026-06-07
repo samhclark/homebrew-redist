@@ -148,6 +148,7 @@ runs the Formula tests and retains platform-specific bottles as seven-day
 workflow artifacts.
 
 The test workflow deliberately has read-only repository permissions.
+
 `.github/workflows/publish.yml` is a separate, manually dispatched workflow
 that publishes the artifacts from a selected successful test run. It:
 
@@ -178,6 +179,56 @@ The workflows deliberately do not attempt a guest boot. KVM and HVF access on
 GitHub-hosted runners are not treated as a supported CI contract, so CI covers
 installation and the Formula's CLI test; `make smoke-installed` covers a real
 guest boot on the maintainer's development host.
+
+## Updating smolvm
+
+Do not assume a future version number exists. Start an update only after
+upstream has published a concrete tag and matching runtime archives.
+
+For an actual new release:
+
+1. Inspect the tag's `.gitmodules` and gitlink entries:
+
+   ```sh
+   git -C ../../smol-machines/smolvm fetch --tags
+   git -C ../../smol-machines/smolvm show <tag>:.gitmodules
+   git -C ../../smol-machines/smolvm ls-tree <tag> libkrun libkrunfw
+   ```
+
+2. Update the smolvm URL/version/hash, pinned libkrun and libkrunfw revisions
+   and hashes, kernel version/hash, and per-platform runtime archive hashes in
+   both `Formula/smolvm.rb` and `Makefile`.
+3. Generate a fresh Cargo lockfile from the exact tag and replace
+   `Resources/smolvm/Cargo.lock`. Review dependency changes before committing.
+4. Recheck every source patch in the Formula and Makefile. Remove patches that
+   upstream fixed, and fail explicitly if an expected replacement no longer
+   matches.
+5. Run the local source and Formula checks:
+
+   ```sh
+   brew bundle --file=Brewfile
+   make clean
+   make build
+   make check
+   brew reinstall --build-from-source samhclark/redist/smolvm
+   make formula-check
+   make smoke-installed
+   ```
+
+6. Push the version update and wait for `tests.yml` to pass on Linux x86_64,
+   Linux arm64, and macOS arm64. Inspect all generated bottles.
+7. Publish that successful run within seven days:
+
+   ```sh
+   gh workflow run publish.yml -f run_id=<successful-tests-run-id>
+   ```
+
+8. Pull Homebrew's generated bottle-block commit, reinstall normally, confirm
+   Homebrew pours the bottle, and rerun `make smoke-installed`.
+
+Keep the version update, build fixes, and generated bottle block as distinct
+commits where practical. Never copy hashes or submodule revisions from a
+different upstream tag.
 
 ## Build dependencies
 
@@ -393,46 +444,53 @@ paths, macOS install names/rpaths, and codesigning all need dedicated tests.
 
 ## GPU support feasibility
 
-Adding a tap-local virglrenderer Formula is feasible and is the most direct
-next experiment.
+`Formula/smolvm-virglrenderer.rb` is the first GPU packaging experiment. It
+currently targets Linux only and pins upstream virglrenderer 1.3.0.
 
-Homebrew core currently provides `libepoxy`, `molten-vk`, `libdrm`, Mesa, and
-the Vulkan loader, but not virglrenderer. There is a current working precedent
-in `slp/homebrew-krun`: its virglrenderer Formula builds the
-`slp/virglrenderer` tag `0.10.4e-krunkit` with:
+The Formula has been built from source and bottled locally on Linux x86_64.
+The source-built and bottle-poured installations both pass the Formula test
+and strict Homebrew linkage checks. The installed library exports
+`virgl_renderer_context_get_poll_fd` and `virgl_renderer_context_poll`, which
+are the extra polling APIs used by smolvm's pinned libkrun fork.
+
+Homebrew core provides its dependencies (`libepoxy`, `libdrm`, Mesa/GBM, and
+the Vulkan loader) but not virglrenderer itself. Upstream 1.3.0 automatically
+builds `virgl_render_server` whenever Venus is enabled, so the Linux Formula
+uses:
 
 ```sh
 meson setup build \
+  -Dplatforms=egl \
   -Dvenus=true \
-  -Drender-server=false
+  -Drender-server-worker=process \
+  -Dvulkan-dload=true
 meson compile -C build
 meson install -C build
 ```
 
-That Formula depends on `libepoxy` and `molten-vk`, and the tap was active as
-recently as May 26, 2026. It demonstrates that this stack is packageable on
-Apple Silicon, but its old forked virglrenderer version should be evaluated
-rather than copied blindly.
+The older `slp/homebrew-krun` Formula is useful macOS precedent, but it packages
+the `slp/virglrenderer` fork at `0.10.4e-krunkit` and explicitly disables the
+render server. Copying it would not satisfy smolvm's Linux design.
 
-A direct copy is also insufficient for Linux. smolvm's upstream distribution
-expects a `virgl_render_server` executable for Venus, while the example Formula
-sets `-Drender-server=false`. A tap-local Formula should enable and install the
-render server on Linux; macOS can use the in-process MoltenVK path.
+macOS is intentionally not declared yet. Upstream 1.3.0 recognizes Darwin but
+its dynamic Vulkan loader still searches for `libvulkan.so.1` and
+`libvulkan.so`, while smolvm needs MoltenVK. A macOS Formula needs a focused
+loader patch or link-time MoltenVK integration, plus native bottle and runtime
+testing, before `depends_on :linux` can be removed.
 
 A likely tap design is:
 
-1. Add `Formula/smolvm-virglrenderer.rb`, initially pinned to the exact fork
-   and revision known to work with the smol-machines libkrun fork.
-2. Depend on `meson`, `ninja`, and `pkgconf` for the build.
-3. On macOS depend on `libepoxy` and `molten-vk`.
-4. On Linux enable the render server and evaluate `libepoxy`, `libdrm`, Mesa,
-   and `vulkan-loader` based on the enabled virglrenderer options.
-5. Build libkrun with `--features blk,net,gpu` and add `llvm` so bindgen can
+1. Prove the Linux virglrenderer Formula builds, bottles, and exposes the
+   render-server callback and polling APIs used by smolvm's libkrun fork.
+2. Build libkrun with `--features blk,net,gpu` and add `llvm` so bindgen can
    find libclang (`LIBCLANG_PATH="$(brew --prefix llvm)/lib"`).
-6. Symlink the needed virglrenderer libraries and, on Linux,
+3. Symlink the needed virglrenderer libraries and, on Linux,
    `virgl_render_server` into smolvm's `libexec/lib`, or patch the runtime to
    search the dependency's `opt_lib` and `opt_bin`.
-7. Decide whether virglrenderer is mandatory or optional.
+4. Run an end-to-end guest Vulkan test on Linux.
+5. Implement and test the separate macOS MoltenVK loader path.
+6. Decide whether virglrenderer is mandatory or whether a separate
+   `smolvm-gpu` Formula is warranted.
 
 Modern Homebrew Formulae do not have a good user-facing optional-feature model.
 For this tap, making GPU dependencies mandatory is simpler. A separate
@@ -459,12 +517,14 @@ virglrenderer pin will need regular security updates.
 
 ## Recommended next steps
 
-1. Publish the current three-platform v1.0.1 bottles with `publish.yml`.
-2. Run `make smoke-installed` after each local version upgrade.
-3. Bottle `smolvm-libkrunfw` before attempting broader refactoring.
-4. Prototype `smolvm-virglrenderer` using the slp tap Formula as a reference.
-5. Build `smolvm-libkrun` with `blk,net,gpu` against that Formula and run a
-   guest Vulkan smoke test.
+1. Confirm the `smolvm-virglrenderer` CI bottles on Linux x86_64 and arm64.
+2. Build `smolvm`'s pinned libkrun with `blk,net,gpu` against that Formula.
+3. Wire the virglrenderer library and render server into smolvm's runtime.
+4. Run a guest Vulkan smoke test.
+5. Add and test the macOS MoltenVK loader patch.
+6. Reconsider separate `smolvm-libkrunfw` and `smolvm-libkrun` Formulae after
+   the GPU dependency graph is proven.
+7. For any real future smolvm release, follow the documented update checklist.
 
 ## Reference sources
 

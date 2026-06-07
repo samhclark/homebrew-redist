@@ -15,13 +15,20 @@ if OS.linux?
   brew "elfutils"
   brew "flex"
   brew "gpatch"
+  brew "libdrm"
+  brew "libepoxy"
+  brew "libyaml"
+  brew "mesa"
+  brew "meson"
+  brew "ninja"
   brew "openssl@3"
   brew "python@3.14"
+  brew "vulkan-loader"
   brew "xz"
   brew "zlib-ng-compat"
   brew "zstd"
 end
 
-# GPU work is not part of the proven build. It will additionally need at least
-# meson, ninja, llvm, libepoxy, and a virglrenderer Formula. See
-# docs/smolvm-source-build.md.
+# Building GPU-enabled libkrun will additionally need llvm/libclang. The
+# smolvm-virglrenderer Formula is now in this tap, but smolvm does not depend on
+# it or build libkrun's GPU feature yet. See docs/smolvm-source-build.md.
