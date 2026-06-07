@@ -7,11 +7,11 @@ class Smolvm < Formula
   revision 1
 
   bottle do
-    root_url "https://github.com/samhclark/homebrew-redist/releases/download/smolvm-1.0.1"
-    rebuild 1
-    sha256               arm64_tahoe:  "c7f405a3a09d47654bee0ca3cd91be9d96405477cc14411305b5536b3b84cd64"
-    sha256 cellar: :any, arm64_linux:  "b2bfe531206e73ad92602a4b74960e7238f7914e9e9f037d43f411a8ef550171"
-    sha256 cellar: :any, x86_64_linux: "4db1e152ace0b3d3a13f562a75ed8212c05c285cb414bf2d5cd8a8576728f4ee"
+    root_url "https://github.com/samhclark/homebrew-redist/releases/download/smolvm-1.0.1_1"
+    rebuild 2
+    sha256               arm64_tahoe:  "10c2a1a175d8fdb19b2da7f8114c02e5f90609257585cda92b764bd5ebeac8a1"
+    sha256 cellar: :any, arm64_linux:  "7dbd1fb325954778e72d7bb81ae5f32849d4a368408b84f57d0468dda71f243c"
+    sha256 cellar: :any, x86_64_linux: "c0d5e42d3fc4157f260786056eb3f94b650059fec53ccade9087dfdf20802632"
   end
 
   depends_on "e2fsprogs" => :build
