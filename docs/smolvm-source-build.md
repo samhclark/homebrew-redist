@@ -73,7 +73,7 @@ version `smolvm 1.0.1`. The following checks passed:
 - Correct libkrunfw symlink chain ending at `libkrunfw.so.5.4.0`.
 - Sparse 512 MiB ext4 templates, using about 17 MiB of real disk each.
 
-The installed Linux x86_64 revision also passes three local KVM tests:
+The installed Linux x86_64 revision also passes four local KVM tests:
 
 - The bundled bare Alpine guest returns `smolvm-boot-smoke-ok`.
 - An Alpine OCI workload started with `--gpu` exposes
@@ -82,6 +82,9 @@ The installed Linux x86_64 revision also passes three local KVM tests:
   `vulkaninfo --summary`. It reports the Mesa Venus driver, a
   `Virtio-GPU Venus (Intel(R) Iris(R) Xe Graphics (TGL GT2))` device, and
   Vulkan 1.4.
+- A compiled Vulkan probe dispatches a compute shader through that Venus
+  device, reads 256 transformed integers back from a storage buffer, and
+  verifies every result. It returns `smolvm-vulkan-compute-smoke-ok`.
 
 The revision passed the complete test-bot build and Formula test sequence on
 Linux x86_64, Linux arm64, and macOS 26 arm64:
@@ -194,6 +197,40 @@ make smoke-vulkan-installed \
   VULKAN_SMOKE_GUEST_TIMEOUT=1140s
 ```
 
+For a deterministic compute test without installing packages at guest boot,
+build the dedicated Fedora image locally with Podman:
+
+```sh
+make build-vulkan-smoke-image
+```
+
+This creates `localhost/smolvm-vulkan-smoke:dev`. The multi-stage
+`Resources/vulkan-smoke/Containerfile` assembles and validates a SPIR-V shader,
+compiles a small Vulkan C program, and installs the COPR's Venus-enabled Mesa
+runtime in the final image. No Docker daemon is used.
+
+The local image validates the build artifact, but smolvm v1.0.1 cannot consume
+Podman's local image store directly. smolvm pulls OCI images from a registry
+inside its guest. Run the published image through smolvm with:
+
+```sh
+make smoke-vulkan-compute-installed
+```
+
+The test pulls `ghcr.io/samhclark/smolvm-vulkan-smoke:main`, enables a 2 GiB
+virtio-gpu shared-memory region, and lets the image entrypoint dispatch the
+compute shader. It rejects llvmpipe and any device not named
+`Virtio-GPU Venus`, then verifies the shader's output buffer before returning
+`smolvm-vulkan-compute-smoke-ok`.
+
+Override the image with an immutable digest from the image workflow when
+reproducing a specific result:
+
+```sh
+make smoke-vulkan-compute-installed \
+  VULKAN_COMPUTE_IMAGE=ghcr.io/samhclark/smolvm-vulkan-smoke@sha256:<digest>
+```
+
 ## Continuous integration
 
 `.github/workflows/tests.yml` runs Homebrew's `brew test-bot` on native
@@ -243,11 +280,22 @@ The workflow's `GITHUB_TOKEN` needs the repository's normal `contents: write`
 permission. The manual dispatch and source checks prevent routine pushes from
 republishing an existing version.
 
-The workflows deliberately do not attempt a guest boot. KVM and HVF access on
-GitHub-hosted runners are not treated as a supported CI contract, so CI covers
-installation and the Formula's CLI test. The three `smoke-*-installed` targets
-cover real guest boot, device forwarding, and Vulkan initialization on the
-maintainer's development host.
+`.github/workflows/vulkan-smoke-image.yml` uses Red Hat's Buildah and registry
+actions to build the OCI-format Linux amd64 Vulkan compute image and publish
+`main` and `sha-<commit>` tags to GHCR. After its first successful run, make
+the `smolvm-vulkan-smoke` package public in its
+[GitHub package settings](https://docs.github.com/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility).
+GHCR packages initially default to private, while smolvm needs anonymous
+access from its disposable guest.
+
+The workflows deliberately do not attempt a guest boot. Standard
+[GitHub-hosted runners](https://docs.github.com/actions/reference/github-hosted-runners-reference)
+do not provide a reliable nested-KVM plus `/dev/dri/render*` contract for this
+workload. CI builds and publishes the image;
+`smoke-vulkan-compute-installed` runs it on the maintainer's Linux host with
+real KVM and GPU access. The four `smoke-*-installed` targets cover bare guest
+boot, device forwarding, Vulkan initialization, and an actual compute dispatch
+with readback.
 
 ## Updating smolvm
 
@@ -284,6 +332,7 @@ For an actual new release:
    make smoke-installed
    make smoke-gpu-installed
    make smoke-vulkan-installed
+   make smoke-vulkan-compute-installed
    ```
 
 6. Push the version update and wait for `tests.yml` to pass on Linux x86_64,

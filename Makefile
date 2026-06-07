@@ -35,6 +35,13 @@ VULKAN_SMOKE_COPR ?= slp/mesa-libkrun-vulkan
 VULKAN_SMOKE_TIMEOUT ?= 900
 VULKAN_SMOKE_GUEST_TIMEOUT ?= 840s
 VULKAN_SMOKE_MARKER := smolvm-vulkan-smoke-ok
+PODMAN ?= podman
+VULKAN_COMPUTE_LOCAL_IMAGE ?= localhost/smolvm-vulkan-smoke:dev
+VULKAN_COMPUTE_IMAGE ?= ghcr.io/samhclark/smolvm-vulkan-smoke:main
+VULKAN_COMPUTE_TIMEOUT ?= 600
+VULKAN_COMPUTE_GUEST_TIMEOUT ?= 540s
+VULKAN_COMPUTE_MARKER := smolvm-vulkan-compute-smoke-ok
+VULKAN_COMPUTE_IIDFILE := $(BUILD_DIR)/vulkan-smoke-image-id
 
 SMOLVM_ARCHIVE := $(DOWNLOAD_DIR)/smolvm-$(SMOLVM_VERSION).tar.gz
 LIBKRUN_ARCHIVE := $(DOWNLOAD_DIR)/libkrun-$(LIBKRUN_REV).tar.gz
@@ -110,7 +117,9 @@ endif
 
 .PHONY: help deps fetch verify prepare build build-init build-libkrun
 .PHONY: build-libkrunfw build-smolvm stage check formula-check
+.PHONY: build-vulkan-smoke-image
 .PHONY: smoke-installed smoke-gpu-installed smoke-vulkan-installed
+.PHONY: smoke-vulkan-compute-installed
 .PHONY: clean
 
 help:
@@ -126,6 +135,8 @@ help:
 	  '  make smoke-installed Boot the Homebrew-installed smolvm and run a guest command' \
 	  '  make smoke-gpu-installed Verify virtio-gpu devices in an Alpine guest' \
 	  '  make smoke-vulkan-installed Run vulkaninfo through Venus in a Fedora guest' \
+	  '  make build-vulkan-smoke-image Build the Vulkan compute image with Podman' \
+	  '  make smoke-vulkan-compute-installed Dispatch a Vulkan compute shader through Venus' \
 	  '  make clean         Remove generated .build state' \
 	  '' \
 	  'Linux builds include GPU support; macOS remains CPU-only.'
@@ -351,6 +362,24 @@ formula-check:
 	  HOMEBREW_NO_INSTALL_FROM_API=1 \
 	  brew test samhclark/redist/smolvm
 
+build-vulkan-smoke-image:
+	@command -v "$(PODMAN)" >/dev/null || { \
+	  printf '%s is required to build the Vulkan smoke image\n' "$(PODMAN)" >&2; \
+	  exit 1; \
+	}
+	mkdir -p "$(BUILD_DIR)"
+	rm -f "$(VULKAN_COMPUTE_IIDFILE)"
+	# Tag separately so strict containers-policy.json files do not reject a
+	# cached unsigned local image during Podman's final named-image copy.
+	"$(PODMAN)" build --format oci \
+	  --iidfile "$(VULKAN_COMPUTE_IIDFILE)" \
+	  --file Resources/vulkan-smoke/Containerfile \
+	  Resources/vulkan-smoke
+	"$(PODMAN)" tag "$$(cat "$(VULKAN_COMPUTE_IIDFILE)")" \
+	  "$(VULKAN_COMPUTE_LOCAL_IMAGE)"
+	"$(PODMAN)" image inspect "$(VULKAN_COMPUTE_LOCAL_IMAGE)" \
+	  --format '{{.Id}} {{.Architecture}} {{json .Config.Entrypoint}}'
+
 smoke-installed:
 	@test -x "$(SMOLVM_BIN)" || { \
 	  printf 'smolvm is not installed by Homebrew; run brew install samhclark/redist/smolvm\n' >&2; \
@@ -505,6 +534,56 @@ smoke-vulkan-installed:
 	fi; \
 	grep -Fq -- "$(VULKAN_SMOKE_MARKER)" <<<"$$output" || { \
 	  printf 'smolvm Vulkan smoke marker was not returned by the guest\n' >&2; \
+	  exit 1; \
+	}
+
+smoke-vulkan-compute-installed:
+	@test "$(HOST_OS)" = "Linux" || { \
+	  printf 'the installed Vulkan compute smoke test currently supports Linux only\n' >&2; \
+	  exit 1; \
+	}
+	@test -x "$(SMOLVM_BIN)" || { \
+	  printf 'smolvm is not installed by Homebrew; run brew install samhclark/redist/smolvm\n' >&2; \
+	  exit 1; \
+	}
+	@test -c /dev/kvm && test -r /dev/kvm && test -w /dev/kvm || { \
+	  printf '/dev/kvm is unavailable or inaccessible\n' >&2; \
+	  exit 1; \
+	}
+	@test -c /dev/dri/renderD128 || { \
+	  printf '/dev/dri/renderD128 is unavailable on the host\n' >&2; \
+	  exit 1; \
+	}
+	@libdir="$$(brew --prefix smolvm)/libexec/lib"; \
+	test -x "$$libdir/virgl_render_server"; \
+	env LD_LIBRARY_PATH="$$libdir" \
+	  $(GPU_FEATURE_CHECK) "$$libdir/libkrun.so"
+	@tmpdir="$$(mktemp -d)"; \
+	trap 'rm -rf "$$tmpdir"' EXIT; \
+	mkdir -p "$$tmpdir/home"; \
+	host_timeout=(); \
+	if command -v timeout >/dev/null; then \
+	  host_timeout=(timeout "$(VULKAN_COMPUTE_TIMEOUT)"); \
+	fi; \
+	if output="$$(env \
+	  HOME="$$tmpdir/home" \
+	  XDG_CACHE_HOME="$$tmpdir/cache" \
+	  XDG_DATA_HOME="$$tmpdir/data" \
+	  "$${host_timeout[@]}" "$(SMOLVM_BIN)" machine run \
+	    --gpu --gpu-vram 2048 --net --image "$(VULKAN_COMPUTE_IMAGE)" \
+	    --cpus 2 --mem 4096 --timeout "$(VULKAN_COMPUTE_GUEST_TIMEOUT)" \
+	    2>&1)"; then \
+	  status=0; \
+	else \
+	  status=$$?; \
+	fi; \
+	printf '%s\n' "$$output"; \
+	if [[ $$status -ne 0 ]]; then \
+	  printf 'smolvm Vulkan compute smoke test failed with exit status %s\n' "$$status" >&2; \
+	  exit "$$status"; \
+	fi; \
+	grep -Fq -- "$(VULKAN_COMPUTE_MARKER)" <<<"$$output" || { \
+	  printf 'smolvm Vulkan compute smoke marker was not returned by the guest\n' >&2; \
 	  exit 1; \
 	}
 
