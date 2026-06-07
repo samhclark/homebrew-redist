@@ -4,6 +4,7 @@ class Smolvm < Formula
   url "https://github.com/smol-machines/smolvm/archive/refs/tags/v1.0.1.tar.gz"
   sha256 "2192f54c53a8621ecd038a1bbdee1cc917e111abe3d935e81bdaee51daccc862"
   license all_of: ["Apache-2.0", "LGPL-2.1-only", "GPL-2.0-only"]
+  revision 1
 
   bottle do
     root_url "https://github.com/samhclark/homebrew-redist/releases/download/smolvm-1.0.1"
@@ -29,11 +30,15 @@ class Smolvm < Formula
     depends_on "elfutils" => :build
     depends_on "flex" => :build
     depends_on "gpatch" => :build
+    depends_on "llvm" => :build
     depends_on "openssl@3" => :build
     depends_on "python@3.14" => :build
     depends_on "xz" => :build
     depends_on "zlib-ng-compat" => :build
     depends_on "zstd" => :build
+    depends_on "bzip2"
+    depends_on "libepoxy"
+    depends_on "smolvm-virglrenderer"
 
     resource "libkrunfw" do
       url "https://github.com/smol-machines/libkrunfw/archive/516ceece6aed60ccc84ac8faa459885062e39400.tar.gz"
@@ -101,6 +106,7 @@ class Smolvm < Formula
     build_libkrun(init_krun, libdir)
 
     if OS.linux?
+      install_linux_gpu_runtime(libdir)
       build_libkrunfw(libdir)
     else
       libkrunfw = resource_root/"runtime/lib/libkrunfw.5.dylib"
@@ -149,6 +155,7 @@ class Smolvm < Formula
   def caveats
     platform_notes = if OS.linux?
       <<~EOS
+        libkrun is built with GPU support using the tap's virglrenderer package.
         libkrunfw and its Linux guest kernel are built from source.
 
         smolvm requires KVM to run guests:
@@ -167,9 +174,6 @@ class Smolvm < Formula
       is bootstrapped from the matching upstream release because constructing it
       requires networked Alpine package installation during the build.
 
-      GPU acceleration is not included. This tap packages virglrenderer on
-      Linux, but smolvm's libkrun build does not enable its GPU feature yet.
-
       #{platform_notes}
     EOS
   end
@@ -179,7 +183,21 @@ class Smolvm < Formula
     assert_match "smolvm", shell_output("#{bin}/smolvm --help")
     assert_path_exists libexec/"init.krun"
     assert_match "./init.krun", shell_output("tar -tf #{libexec}/agent-rootfs.tar")
-    if OS.mac?
+    if OS.linux?
+      assert_path_exists libexec/"lib/libepoxy.so.0"
+      assert_path_exists libexec/"lib/libvirglrenderer.so.1"
+      assert_predicate libexec/"lib/virgl_render_server", :executable?
+
+      ENV.prepend_path "LD_LIBRARY_PATH", libexec/"lib"
+      require "fiddle"
+      libkrun = Fiddle.dlopen(libexec/"lib/libkrun.so")
+      has_feature = Fiddle::Function.new(
+        libkrun["krun_has_feature"],
+        [Fiddle::TYPE_LONG_LONG],
+        Fiddle::TYPE_INT,
+      )
+      assert_equal 1, has_feature.call(2)
+    else
       libkrunfw = libexec/"lib/libkrunfw.5.dylib"
       assert_equal "@rpath/libkrunfw.5.dylib", MachO.open(libkrunfw).dylib_id
       system "codesign", "--verify", libkrunfw
@@ -208,8 +226,21 @@ class Smolvm < Formula
   def build_libkrun(init_krun, libdir)
     libkrun = buildpath.parent/"libkrun"
     ENV["KRUN_INIT_BINARY_PATH"] = init_krun
-    cd libkrun do
-      system "cargo", "build", "--release", "--locked", "-p", "libkrun", "--features", "blk,net"
+    features = "blk,net"
+    build_env = {}
+    if OS.linux?
+      virglrenderer = Formula["smolvm-virglrenderer"]
+      ENV.prepend_path "PKG_CONFIG_PATH", virglrenderer.opt_lib/"pkgconfig"
+      ENV.prepend_path "LIBRARY_PATH", virglrenderer.opt_lib
+      build_env["LIBCLANG_PATH"] = Formula["llvm"].opt_lib
+      build_env["RUSTFLAGS"] = [ENV["RUSTFLAGS"], "-C relro-level=partial"].compact.join(" ")
+      features += ",gpu"
+    end
+
+    with_env(build_env) do
+      cd libkrun do
+        system "cargo", "build", "--release", "--locked", "-p", "libkrun", "--features", features
+      end
     end
 
     if OS.mac?
@@ -218,6 +249,14 @@ class Smolvm < Formula
       libdir.install libkrun/"target/release/libkrun.so"
       libdir.install_symlink "libkrun.so" => "libkrun.so.1"
     end
+  end
+
+  def install_linux_gpu_runtime(libdir)
+    virglrenderer = Formula["smolvm-virglrenderer"]
+    libdir.install_symlink Formula["bzip2"].opt_lib/"libbz2.so.1.0"
+    libdir.install_symlink Formula["libepoxy"].opt_lib/"libepoxy.so.0"
+    libdir.install_symlink virglrenderer.opt_lib/"libvirglrenderer.so.1"
+    libdir.install_symlink virglrenderer.opt_libexec/"virgl_render_server"
   end
 
   def build_libkrunfw(libdir)
