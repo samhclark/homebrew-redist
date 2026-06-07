@@ -4,7 +4,7 @@ class Smolvm < Formula
   url "https://github.com/smol-machines/smolvm/archive/refs/tags/v1.0.1.tar.gz"
   sha256 "2192f54c53a8621ecd038a1bbdee1cc917e111abe3d935e81bdaee51daccc862"
   license all_of: ["Apache-2.0", "LGPL-2.1-only", "GPL-2.0-only"]
-  revision 1
+  revision 2
 
   bottle do
     root_url "https://github.com/samhclark/homebrew-redist/releases/download/smolvm-1.0.1_1"
@@ -264,6 +264,12 @@ class Smolvm < Formula
     pyelftools = buildpath.parent/"pyelftools"
     resource("libkrunfw").stage libkrunfw
     resource("pyelftools").stage pyelftools
+
+    if Hardware::CPU.intel?
+      inreplace libkrunfw/"config-libkrunfw_x86_64",
+                "# CONFIG_DRM is not set",
+                "CONFIG_DRM=y\nCONFIG_DRM_VIRTIO_GPU=y"
+    end
 
     kernel_tarball = libkrunfw/"tarballs/linux-6.12.87.tar.xz"
     kernel_tarball.dirname.mkpath

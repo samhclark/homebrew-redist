@@ -195,6 +195,11 @@ ifeq ($(HOST_OS),Linux)
 	tar -xf "$(PYELFTOOLS_ARCHIVE)" -C "$(PYELFTOOLS_SRC)" --strip-components=1
 	mkdir -p "$(LIBKRUNFW_SRC)/tarballs"
 	cp "$(KERNEL_ARCHIVE)" "$(LIBKRUNFW_SRC)/tarballs/linux-$(KERNEL_VERSION).tar.xz"
+ifeq ($(GUEST_ARCH),x86_64)
+	grep -qx '# CONFIG_DRM is not set' "$(LIBKRUNFW_SRC)/config-libkrunfw_x86_64"
+	perl -0pi -e 's/# CONFIG_DRM is not set/CONFIG_DRM=y\nCONFIG_DRM_VIRTIO_GPU=y/' \
+	  "$(LIBKRUNFW_SRC)/config-libkrunfw_x86_64"
+endif
 endif
 	perl -0pi -e 's/#include <unistd\.h>\n/#include <unistd.h>\n\nextern char **environ;\n/' \
 	  "$(LIBKRUN_SRC)/init/init.c"
