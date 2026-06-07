@@ -15,6 +15,8 @@ archive to building the host-side software from pinned source:
 - On Linux, the smol-machines libkrunfw fork is built from commit
   `516ceece6aed60ccc84ac8faa459885062e39400`, including its patched Linux
   6.12.87 guest kernel.
+- On x86_64 Linux, the libkrunfw kernel config is amended to enable DRM and
+  virtio-gpu. The pinned arm64 config already enables those options.
 - `init.krun` is built as a static guest-architecture ELF with Zig.
 - The storage and overlay ext4 templates are generated during installation.
 - The v1.0.1 release archive remains as a bootstrap for the Alpine guest rootfs.
@@ -48,8 +50,8 @@ The complete Formula was built on Linux x86_64 using:
 brew reinstall --build-from-source samhclark/redist/smolvm
 ```
 
-The GPU-enabled revision build completed in 11 minutes 17 seconds. Homebrew
-installed package revision `1.0.1_1`, while the CLI correctly reported upstream
+The GPU-enabled revision build completed in 11 minutes 19 seconds. Homebrew
+installed package revision `1.0.1_2`, while the CLI correctly reported upstream
 version `smolvm 1.0.1`. The following checks passed:
 
 - `brew style Formula/smolvm.rb`
@@ -71,17 +73,29 @@ version `smolvm 1.0.1`. The following checks passed:
 - Correct libkrunfw symlink chain ending at `libkrunfw.so.5.4.0`.
 - Sparse 512 MiB ext4 templates, using about 17 MiB of real disk each.
 
-The installed Linux x86_64 revision also passes a local KVM guest boot test:
-its bundled bare Alpine guest booted and returned the expected marker from an
-`echo` command.
+The installed Linux x86_64 revision also passes three local KVM tests:
 
-The previous CPU-only smolvm revision passed the complete test-bot build,
-bottle reinstall, linkage, and Formula test sequence on Linux x86_64, Linux
-arm64, and macOS 26 arm64. That successful run is
-<https://github.com/samhclark/homebrew-redist/actions/runs/27076010107>.
-The separately packaged `smolvm-virglrenderer` 1.3.0 bottles are published for
-Linux x86_64 and arm64. The new `smolvm` GPU revision still needs its own
-three-platform CI run and bottle publication after these commits are pushed.
+- The bundled bare Alpine guest returns `smolvm-boot-smoke-ok`.
+- An Alpine OCI workload started with `--gpu` exposes
+  `/dev/dri/renderD128` and `/dev/dri/card0`.
+- A Fedora 42 workload with the `slp/mesa-libkrun-vulkan` Mesa packages runs
+  `vulkaninfo --summary`. It reports the Mesa Venus driver, a
+  `Virtio-GPU Venus (Intel(R) Iris(R) Xe Graphics (TGL GT2))` device, and
+  Vulkan 1.4.
+
+The revision passed the complete test-bot build and Formula test sequence on
+Linux x86_64, Linux arm64, and macOS 26 arm64:
+<https://github.com/samhclark/homebrew-redist/actions/runs/27099891376>.
+The publish workflow also succeeded:
+<https://github.com/samhclark/homebrew-redist/actions/runs/27100575301>.
+
+The `smolvm-1.0.1_2` release contains bottles for Linux x86_64, Linux arm64,
+and macOS 26 arm64:
+<https://github.com/samhclark/homebrew-redist/releases/tag/smolvm-1.0.1_2>.
+The published Linux x86_64 bottle was force-poured locally and passed the
+Formula test, strict linkage test, bare-guest smoke, GPU-device smoke, and
+Vulkan smoke. The separately packaged `smolvm-virglrenderer` 1.3.0 bottles are
+published for Linux x86_64 and arm64.
 
 ## Reproducing after a reboot
 
@@ -102,9 +116,9 @@ make check
 ```
 
 The Makefile downloads and verifies every pinned archive needed on the current
-platform, extracts sources, applies the two compatibility patches, builds the
-host stack, and places a distribution-like result under `.build/stage`. Linux
-includes GPU support; macOS remains CPU-only.
+platform, extracts sources, applies the source compatibility and guest-kernel
+config changes, builds the host stack, and places a distribution-like result
+under `.build/stage`. Linux includes GPU support; macOS remains CPU-only.
 
 Use `make clean` before retrying after changing a pin or build patch. The
 Makefile uses stamp files and will otherwise retain the previous prepared
@@ -140,6 +154,44 @@ diagnosing a slower host:
 ```sh
 make smoke-installed SMOLVM_BIN=/path/to/smolvm \
   SMOKE_TIMEOUT=240 SMOKE_GUEST_TIMEOUT=120s
+```
+
+On Linux, verify that virtio-gpu device nodes reach an Alpine OCI workload:
+
+```sh
+make smoke-gpu-installed
+```
+
+This pulls `alpine:latest`, starts an ephemeral GPU-enabled VM, and requires
+both `/dev/dri/renderD128` and `/dev/dri/card0` inside the container. It
+returns `smolvm-gpu-device-smoke-ok` on success.
+
+For a stronger Vulkan initialization and device-enumeration check:
+
+```sh
+make smoke-vulkan-installed
+```
+
+This pulls `fedora:42`, enables the `slp/mesa-libkrun-vulkan` COPR, installs
+`mesa-vulkan-drivers` and `vulkan-tools`, and runs `vulkaninfo --summary`. The
+test requires a Mesa Venus driver, a `Virtio-GPU Venus` device, Vulkan 1.2 or
+newer, and both guest DRM device nodes. It uses two vCPUs, 4 GiB of guest
+memory, and 2 GiB of GPU shared memory.
+
+This target is intentionally a maintainer diagnostic, not a Formula or CI
+test. It downloads a large Fedora image and packages from mutable Fedora and
+third-party COPR repositories. It also imports that COPR's signing key inside
+the disposable guest. The temporary Home and XDG directories are deleted
+afterward.
+
+The image, COPR, and timeouts are configurable:
+
+```sh
+make smoke-vulkan-installed \
+  VULKAN_SMOKE_IMAGE=fedora:42 \
+  VULKAN_SMOKE_COPR=slp/mesa-libkrun-vulkan \
+  VULKAN_SMOKE_TIMEOUT=1200 \
+  VULKAN_SMOKE_GUEST_TIMEOUT=1140s
 ```
 
 ## Continuous integration
@@ -193,8 +245,9 @@ republishing an existing version.
 
 The workflows deliberately do not attempt a guest boot. KVM and HVF access on
 GitHub-hosted runners are not treated as a supported CI contract, so CI covers
-installation and the Formula's CLI test; `make smoke-installed` covers a real
-guest boot on the maintainer's development host.
+installation and the Formula's CLI test. The three `smoke-*-installed` targets
+cover real guest boot, device forwarding, and Vulkan initialization on the
+maintainer's development host.
 
 ## Updating smolvm
 
@@ -229,6 +282,8 @@ For an actual new release:
    brew reinstall --build-from-source samhclark/redist/smolvm
    make formula-check
    make smoke-installed
+   make smoke-gpu-installed
+   make smoke-vulkan-installed
    ```
 
 6. Push the version update and wait for `tests.yml` to pass on Linux x86_64,
@@ -242,7 +297,7 @@ For an actual new release:
    ```
 
 8. Pull Homebrew's generated bottle-block commit, reinstall normally, confirm
-   Homebrew pours the bottle, and rerun `make smoke-installed`.
+   Homebrew pours the bottle, and rerun the applicable installed smoke tests.
 
 Keep the version update, build fixes, and generated bottle block as distinct
 commits where practical. Never copy hashes or submodule revisions from a
@@ -537,6 +592,10 @@ The Linux integration is now implemented:
 - The Formula test and Makefile checks call `krun_has_feature(2)` and require
   it to return `1`.
 - The normal KVM boot smoke test passes with this runtime layout.
+- The x86_64 libkrunfw guest kernel enables DRM and virtio-gpu.
+- The Alpine GPU smoke sees both DRM device nodes inside the container.
+- The Fedora Vulkan smoke initializes Mesa Venus and enumerates a physical
+  `Virtio-GPU Venus` device through `vulkaninfo`.
 
 Modern Homebrew Formulae do not have a good user-facing optional-feature model.
 For this tap, making GPU dependencies mandatory on Linux is simpler than a
@@ -550,12 +609,15 @@ libkrun with partial RELRO, removing its hard virglrenderer `NEEDED` entry with
 the dedicated virglrenderer dependency is mandatory, and libkrun keeps its
 normal dynamic dependency.
 
-Host packaging is proven on Linux x86_64 locally, but a real guest Vulkan
-workload is still missing. That test must confirm:
+The local Fedora test proves the Vulkan loader, Mesa Venus ICD, virtio-gpu
+transport, and physical-device enumeration. It does not execute a shader,
+compute kernel, or rendered frame. A future stronger workload should execute
+GPU work and validate its result.
 
-- The libkrunfw kernel enables the required virtio-gpu support.
-- The guest workload contains a compatible Mesa Venus driver.
-- A real Vulkan workload succeeds inside a VM.
+The current Vulkan smoke is also not reproducible enough for packaging CI:
+`fedora:42` and the COPR package set are mutable network inputs. A pinned OCI
+digest plus a checksummed guest workload or prebuilt test image would make this
+appropriate for repeatable regression testing.
 
 macOS remains a separate project because it also needs a MoltenVK-capable
 virglrenderer package, install-name/rpath handling, and codesigning tests.
@@ -565,16 +627,14 @@ virglrenderer pin will need regular security updates.
 
 ## Recommended next steps
 
-1. Push the GPU integration commits and confirm `smolvm` CI on Linux x86_64,
-   Linux arm64, and macOS arm64.
-2. Publish the resulting `smolvm` revision bottles with `publish.yml`.
-3. Reinstall the Linux bottle and rerun `make smoke-installed`.
-4. Add a guest Vulkan smoke test using a pinned workload that does not make
-   packaging tests depend on mutable network content.
-5. Add and test the macOS MoltenVK loader path.
-6. Reconsider separate `smolvm-libkrunfw` and `smolvm-libkrun` Formulae after
-   the GPU dependency graph is proven.
-7. For any real future smolvm release, follow the documented update checklist.
+1. Replace the mutable Fedora/COPR Vulkan setup with a pinned OCI image or
+   checksummed guest test artifact.
+2. Add a small Vulkan compute or rendering workload that validates GPU output,
+   not only device enumeration.
+3. Add and test the macOS MoltenVK loader path.
+4. Reconsider separate `smolvm-libkrunfw` and `smolvm-libkrun` Formulae now
+   that the Linux GPU dependency graph is proven.
+5. For any real future smolvm release, follow the documented update checklist.
 
 ## Reference sources
 
