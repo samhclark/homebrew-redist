@@ -5,6 +5,14 @@ class Smolvm < Formula
   sha256 "2192f54c53a8621ecd038a1bbdee1cc917e111abe3d935e81bdaee51daccc862"
   license all_of: ["Apache-2.0", "LGPL-2.1-only", "GPL-2.0-only"]
 
+  bottle do
+    root_url "https://github.com/samhclark/homebrew-redist/releases/download/smolvm-1.0.1"
+    rebuild 1
+    sha256               arm64_tahoe:  "c7f405a3a09d47654bee0ca3cd91be9d96405477cc14411305b5536b3b84cd64"
+    sha256 cellar: :any, arm64_linux:  "b2bfe531206e73ad92602a4b74960e7238f7914e9e9f037d43f411a8ef550171"
+    sha256 cellar: :any, x86_64_linux: "4db1e152ace0b3d3a13f562a75ed8212c05c285cb414bf2d5cd8a8576728f4ee"
+  end
+
   depends_on "e2fsprogs" => :build
   depends_on "pkgconf" => :build
   depends_on "rust" => :build
