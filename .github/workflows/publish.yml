@@ -3,8 +3,15 @@ name: Publish bottles
 on:
   workflow_dispatch:
     inputs:
+      formula:
+        description: Formula whose bottles should be published
+        required: true
+        type: choice
+        options:
+          - smolvm
+          - smolvm-virglrenderer
       run_id:
-        description: Successful Homebrew workflow run ID containing all three bottles
+        description: Successful Homebrew workflow run ID containing the bottles
         required: true
         type: string
 
@@ -39,6 +46,7 @@ jobs:
       - name: Validate source run
         id: source-run
         env:
+          FORMULA: ${{ inputs.formula }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RUN_ID: ${{ inputs.run_id }}
         run: |
@@ -53,35 +61,62 @@ jobs:
           git fetch --no-tags origin "$source_sha"
           git merge-base --is-ancestor "$source_sha" HEAD
 
-          if ! git diff --quiet "$source_sha" HEAD -- \
-            Formula/smolvm.rb Resources/smolvm/Cargo.lock
-          then
+          case "$FORMULA" in
+            smolvm)
+              formula_paths=(Formula/smolvm.rb Resources/smolvm/Cargo.lock)
+              ;;
+            smolvm-virglrenderer)
+              formula_paths=(Formula/smolvm-virglrenderer.rb)
+              ;;
+            *)
+              echo "Unsupported Formula: $FORMULA" >&2
+              exit 1
+              ;;
+          esac
+
+          if ! git diff --quiet "$source_sha" HEAD -- "${formula_paths[@]}"; then
             echo "Formula inputs changed after run $RUN_ID; publish a newer run." >&2
             exit 1
           fi
 
           echo "sha=$source_sha" >> "$GITHUB_OUTPUT"
-          echo "Publishing bottles from run $RUN_ID at $source_sha"
+          echo "Publishing $FORMULA bottles from run $RUN_ID at $source_sha"
 
       - name: Download bottles
         uses: actions/download-artifact@v4
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ inputs.run_id }}
-          pattern: bottles-*
+          pattern: ${{ inputs.formula == 'smolvm' && 'bottles-*' || 'virglrenderer-bottles-*' }}
           merge-multiple: true
           path: bottles
 
       - name: Validate bottles
         env:
+          FORMULA: ${{ inputs.formula }}
           SOURCE_SHA: ${{ steps.source-run.outputs.sha }}
         run: |
           shopt -s nullglob
           jsons=(bottles/*.bottle.json)
           archives=(bottles/*.bottle*.tar.gz)
 
-          test "${#jsons[@]}" -eq 3
-          test "${#archives[@]}" -eq 3
+          case "$FORMULA" in
+            smolvm)
+              expected_count=3
+              expected_tags=(arm64_linux arm64_tahoe x86_64_linux)
+              ;;
+            smolvm-virglrenderer)
+              expected_count=2
+              expected_tags=(arm64_linux x86_64_linux)
+              ;;
+            *)
+              echo "Unsupported Formula: $FORMULA" >&2
+              exit 1
+              ;;
+          esac
+
+          test "${#jsons[@]}" -eq "$expected_count"
+          test "${#archives[@]}" -eq "$expected_count"
 
           mapfile -t revisions < <(
             jq -r '.[].formula.tap_git_revision' "${jsons[@]}" | sort -u
@@ -89,10 +124,15 @@ jobs:
           test "${#revisions[@]}" -eq 1
           test "${revisions[0]}" = "$SOURCE_SHA"
 
+          mapfile -t formulae < <(
+            jq -r 'keys[]' "${jsons[@]}" | sort -u
+          )
+          test "${#formulae[@]}" -eq 1
+          test "${formulae[0]}" = "samhclark/redist/$FORMULA"
+
           mapfile -t tags < <(
             jq -r '.[].bottle.tags | keys[]' "${jsons[@]}" | sort
           )
-          expected_tags=(arm64_linux arm64_tahoe x86_64_linux)
           test "${tags[*]}" = "${expected_tags[*]}"
 
           mapfile -t root_urls < <(
@@ -100,7 +140,7 @@ jobs:
           )
           test "${#root_urls[@]}" -eq 1
           [[ "${root_urls[0]}" == \
-            "https://github.com/$GITHUB_REPOSITORY/releases/download/smolvm-"* ]]
+            "https://github.com/$GITHUB_REPOSITORY/releases/download/$FORMULA-"* ]]
 
           while read -r archive; do
             test -f "bottles/$archive"

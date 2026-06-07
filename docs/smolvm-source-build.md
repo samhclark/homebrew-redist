@@ -155,24 +155,27 @@ job on x86_64 and arm64. Its artifacts use the
 mistake them for release inputs.
 
 `.github/workflows/publish.yml` is a separate, manually dispatched workflow
-that publishes the artifacts from a selected successful test run. It:
+that publishes one Formula's artifacts from a selected successful test run.
+Choose either `smolvm` or `smolvm-virglrenderer` when dispatching it. It:
 
 1. Confirms the run used `tests.yml`, succeeded on `main`, and is an ancestor
    of the current revision.
-2. Refuses to publish if `Formula/smolvm.rb` or its Cargo lockfile changed after
-   that run.
-3. Requires exactly the `x86_64_linux`, `arm64_linux`, and `arm64_tahoe`
-   bottles, all built from the selected revision.
+2. Refuses to publish if the selected Formula's inputs changed after that run.
+3. Requires exactly the selected Formula's supported bottle tags, all built
+   from the selected revision.
 4. Runs Homebrew's `brew pr-upload`, which merges the bottle JSON into the
-   Formula, creates the `smolvm-<version>` GitHub release, and uploads the three
-   bottle archives.
+   Formula, creates the `<formula>-<version>` GitHub release, and uploads the
+   validated bottle archives.
 5. Pushes Homebrew's generated bottle-block commit to `main`.
 
 Publish within the test artifacts' seven-day retention window:
 
 ```sh
 gh run list --workflow tests.yml --branch main --status success --limit 5
-gh workflow run publish.yml -f run_id=27076010107
+gh workflow run publish.yml -f formula=smolvm -f run_id=<run-id>
+gh workflow run publish.yml \
+  -f formula=smolvm-virglrenderer \
+  -f run_id=27082234975
 gh run watch
 ```
 
@@ -225,7 +228,9 @@ For an actual new release:
 7. Publish that successful run within seven days:
 
    ```sh
-   gh workflow run publish.yml -f run_id=<successful-tests-run-id>
+   gh workflow run publish.yml \
+     -f formula=smolvm \
+     -f run_id=<successful-tests-run-id>
    ```
 
 8. Pull Homebrew's generated bottle-block commit, reinstall normally, confirm
