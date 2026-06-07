@@ -30,6 +30,11 @@ SMOKE_MARKER := smolvm-boot-smoke-ok
 GPU_SMOKE_TIMEOUT ?= 180
 GPU_SMOKE_GUEST_TIMEOUT ?= 120s
 GPU_SMOKE_MARKER := smolvm-gpu-device-smoke-ok
+VULKAN_SMOKE_IMAGE ?= fedora:42
+VULKAN_SMOKE_COPR ?= slp/mesa-libkrun-vulkan
+VULKAN_SMOKE_TIMEOUT ?= 900
+VULKAN_SMOKE_GUEST_TIMEOUT ?= 840s
+VULKAN_SMOKE_MARKER := smolvm-vulkan-smoke-ok
 
 SMOLVM_ARCHIVE := $(DOWNLOAD_DIR)/smolvm-$(SMOLVM_VERSION).tar.gz
 LIBKRUN_ARCHIVE := $(DOWNLOAD_DIR)/libkrun-$(LIBKRUN_REV).tar.gz
@@ -104,7 +109,8 @@ FETCH_ARCHIVES += $(LIBKRUNFW_ARCHIVE) $(KERNEL_ARCHIVE) $(PYELFTOOLS_ARCHIVE)
 endif
 
 .PHONY: help deps fetch verify prepare build build-init build-libkrun
-.PHONY: build-libkrunfw build-smolvm stage check formula-check smoke-installed smoke-gpu-installed
+.PHONY: build-libkrunfw build-smolvm stage check formula-check
+.PHONY: smoke-installed smoke-gpu-installed smoke-vulkan-installed
 .PHONY: clean
 
 help:
@@ -119,6 +125,7 @@ help:
 	  '  make formula-check Run style, audit, and the installed Formula test' \
 	  '  make smoke-installed Boot the Homebrew-installed smolvm and run a guest command' \
 	  '  make smoke-gpu-installed Verify virtio-gpu devices in an Alpine guest' \
+	  '  make smoke-vulkan-installed Run vulkaninfo through Venus in a Fedora guest' \
 	  '  make clean         Remove generated .build state' \
 	  '' \
 	  'Linux builds include GPU support; macOS remains CPU-only.'
@@ -436,6 +443,68 @@ smoke-gpu-installed:
 	fi; \
 	grep -Fq -- "$(GPU_SMOKE_MARKER)" <<<"$$output" || { \
 	  printf 'smolvm GPU smoke marker was not returned by the guest\n' >&2; \
+	  exit 1; \
+	}
+
+smoke-vulkan-installed:
+	@test "$(HOST_OS)" = "Linux" || { \
+	  printf 'the installed Vulkan smoke test currently supports Linux only\n' >&2; \
+	  exit 1; \
+	}
+	@test -x "$(SMOLVM_BIN)" || { \
+	  printf 'smolvm is not installed by Homebrew; run brew install samhclark/redist/smolvm\n' >&2; \
+	  exit 1; \
+	}
+	@test -c /dev/kvm && test -r /dev/kvm && test -w /dev/kvm || { \
+	  printf '/dev/kvm is unavailable or inaccessible\n' >&2; \
+	  exit 1; \
+	}
+	@test -c /dev/dri/renderD128 || { \
+	  printf '/dev/dri/renderD128 is unavailable on the host\n' >&2; \
+	  exit 1; \
+	}
+	@libdir="$$(brew --prefix smolvm)/libexec/lib"; \
+	test -x "$$libdir/virgl_render_server"; \
+	env LD_LIBRARY_PATH="$$libdir" \
+	  $(GPU_FEATURE_CHECK) "$$libdir/libkrun.so"
+	@tmpdir="$$(mktemp -d)"; \
+	trap 'rm -rf "$$tmpdir"' EXIT; \
+	mkdir -p "$$tmpdir/home"; \
+	host_timeout=(); \
+	if command -v timeout >/dev/null; then \
+	  host_timeout=(timeout "$(VULKAN_SMOKE_TIMEOUT)"); \
+	fi; \
+	if output="$$(env \
+	  HOME="$$tmpdir/home" \
+	  XDG_CACHE_HOME="$$tmpdir/cache" \
+	  XDG_DATA_HOME="$$tmpdir/data" \
+	  "$${host_timeout[@]}" "$(SMOLVM_BIN)" machine run \
+	    --gpu --gpu-vram 2048 --net --image "$(VULKAN_SMOKE_IMAGE)" \
+	    --cpus 2 --mem 4096 --timeout "$(VULKAN_SMOKE_GUEST_TIMEOUT)" \
+	    -- bash -eu -o pipefail -c '\
+	      dnf install -y dnf-plugins-core; \
+	      dnf copr enable -y "$(VULKAN_SMOKE_COPR)"; \
+	      dnf install -y --allowerasing mesa-vulkan-drivers vulkan-tools; \
+	      test -c /dev/dri/renderD128; \
+	      test -c /dev/dri/card0; \
+	      export XDG_RUNTIME_DIR=/tmp; \
+	      vulkaninfo --summary 2>&1 | tee /tmp/vulkaninfo.txt; \
+	      grep -qiE "deviceName[[:space:]]*=[[:space:]]*Virtio-GPU Venus" /tmp/vulkaninfo.txt; \
+	      grep -qiE "driverName[[:space:]]*=[[:space:]]*venus" /tmp/vulkaninfo.txt; \
+	      grep -qiE "apiVersion[[:space:]]*=[[:space:]]*1\\.[2-9]" /tmp/vulkaninfo.txt; \
+	      echo "$(VULKAN_SMOKE_MARKER)"' \
+	    2>&1)"; then \
+	  status=0; \
+	else \
+	  status=$$?; \
+	fi; \
+	printf '%s\n' "$$output"; \
+	if [[ $$status -ne 0 ]]; then \
+	  printf 'smolvm Vulkan smoke test failed with exit status %s\n' "$$status" >&2; \
+	  exit "$$status"; \
+	fi; \
+	grep -Fq -- "$(VULKAN_SMOKE_MARKER)" <<<"$$output" || { \
+	  printf 'smolvm Vulkan smoke marker was not returned by the guest\n' >&2; \
 	  exit 1; \
 	}
 
