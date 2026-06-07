@@ -88,3 +88,70 @@ jobs:
           path: "*.bottle.*"
           if-no-files-found: ignore
           retention-days: 7
+
+  test-virglrenderer:
+    if: github.event_name != 'pull_request'
+    name: brew test-bot smolvm-virglrenderer (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x86_64
+            runner: ubuntu-24.04
+            container: ghcr.io/homebrew/brew:main
+            uname_arch: x86_64
+          - platform: linux-arm64
+            runner: ubuntu-24.04-arm
+            container: ghcr.io/homebrew/brew:main
+            uname_arch: aarch64
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container }}
+    timeout-minutes: 30
+
+    permissions:
+      actions: read
+      checks: read
+      contents: read
+      pull-requests: read
+
+    steps:
+      - name: Set up Homebrew
+        id: set-up-homebrew
+        uses: Homebrew/actions/setup-homebrew@main
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Cache Homebrew Bundler RubyGems
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.set-up-homebrew.outputs.gems-path }}
+          key: ${{ matrix.platform }}-virglrenderer-rubygems-${{ steps.set-up-homebrew.outputs.gems-hash }}
+          restore-keys: |
+            ${{ matrix.platform }}-virglrenderer-rubygems-
+
+      - name: Verify runner architecture
+        run: |
+          test "$(uname -s)" = "Linux"
+          test "$(uname -m)" = "${{ matrix.uname_arch }}"
+          df -h
+
+      - name: Clean up runner
+        run: brew test-bot --only-cleanup-before
+
+      - name: Set up test-bot
+        run: brew test-bot --only-setup
+
+      - name: Check tap syntax
+        run: brew test-bot --only-tap-syntax
+
+      - name: Build and test smolvm-virglrenderer
+        run: brew test-bot --only-formulae --testing-formulae=smolvm-virglrenderer --fail-fast
+
+      - name: Upload bottles
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: virglrenderer-bottles-${{ matrix.platform }}
+          path: "*.bottle.*"
+          if-no-files-found: ignore
+          retention-days: 7

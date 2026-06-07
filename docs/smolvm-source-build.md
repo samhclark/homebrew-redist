@@ -149,6 +149,11 @@ workflow artifacts.
 
 The test workflow deliberately has read-only repository permissions.
 
+Linux pushes and manual runs also build `smolvm-virglrenderer` in a separate
+job on x86_64 and arm64. Its artifacts use the
+`virglrenderer-bottles-<platform>` prefix so the smolvm-only publisher does not
+mistake them for release inputs.
+
 `.github/workflows/publish.yml` is a separate, manually dispatched workflow
 that publishes the artifacts from a selected successful test run. It:
 
