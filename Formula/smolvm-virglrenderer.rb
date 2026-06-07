@@ -5,6 +5,13 @@ class SmolvmVirglrenderer < Formula
   sha256 "065bc56e89e6f631f96101cd62eba0748e48eb888b434edc86e89d05395e76f3"
   license "MIT"
 
+  bottle do
+    root_url "https://github.com/samhclark/homebrew-redist/releases/download/smolvm-virglrenderer-1.3.0"
+    rebuild 1
+    sha256 arm64_linux:  "914d6d3c603cd9e43307e6e3a83a916ed17e081c5eb00e2ec103e6a1cf415879"
+    sha256 x86_64_linux: "e46f3627fbbebb56c83744057ac0a19e334f951e4e2376c80f5cf0ebcadea178"
+  end
+
   depends_on "libyaml" => :build
   depends_on "meson" => :build
   depends_on "ninja" => :build
