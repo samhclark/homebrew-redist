@@ -4,6 +4,7 @@
 #   brew bundle --file=Brewfile
 
 brew "e2fsprogs"
+brew "perl"
 brew "pkgconf"
 brew "rust"
 brew "zig"
@@ -11,6 +12,7 @@ brew "zig"
 if OS.linux?
   brew "bc"
   brew "bison"
+  brew "bzip2"
   brew "cpio"
   brew "elfutils"
   brew "flex"
@@ -18,17 +20,15 @@ if OS.linux?
   brew "libdrm"
   brew "libepoxy"
   brew "libyaml"
+  brew "llvm"
   brew "mesa"
   brew "meson"
   brew "ninja"
   brew "openssl@3"
-  brew "python@3.14"
+  brew "python@3.14", link: false
   brew "vulkan-loader"
   brew "xz"
   brew "zlib-ng-compat"
   brew "zstd"
+  brew "samhclark/redist/smolvm-virglrenderer"
 end
-
-# Building GPU-enabled libkrun will additionally need llvm/libclang. The
-# smolvm-virglrenderer Formula is now in this tap, but smolvm does not depend on
-# it or build libkrun's GPU feature yet. See docs/smolvm-source-build.md.

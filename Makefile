@@ -58,6 +58,7 @@ endif
 RUNTIME_PLATFORM := darwin-arm64
 RUNTIME_SHA256 := d6a2830cfa7087a935590b0fed859c59bda83410e510a75c0ae5add8c9d21700
 LIBKRUN_NAME := libkrun.dylib
+LIBKRUN_FEATURES := blk,net
 else ifeq ($(HOST_OS),Linux)
 ifeq ($(GUEST_ARCH),aarch64)
 RUNTIME_PLATFORM := linux-arm64
@@ -67,6 +68,15 @@ RUNTIME_PLATFORM := linux-x86_64
 RUNTIME_SHA256 := a4c85e8b3e14e0df7976eb00a9dbdb55e2d90d7f2a0e8c237e8518030496d34a
 endif
 LIBKRUN_NAME := libkrun.so
+LIBKRUN_FEATURES := blk,net,gpu
+LLVM_LIB := $(shell brew --prefix llvm)/lib
+BZIP2_LIB := $(shell brew --prefix bzip2)/lib
+LIBEPOXY_LIB := $(shell brew --prefix libepoxy)/lib
+VIRGL_PREFIX := $(shell brew --prefix smolvm-virglrenderer)
+VIRGL_LIB := $(VIRGL_PREFIX)/lib
+VIRGL_LIBEXEC := $(VIRGL_PREFIX)/libexec
+GPU_PKG_CONFIG_PATH := $(VIRGL_LIB)/pkgconfig:$(shell brew --prefix xorgproto)/share/pkgconfig
+GPU_LIBRARY_PATH := $(VIRGL_LIB):$(BZIP2_LIB)
 else
 $(error Unsupported operating system: $(HOST_OS))
 endif
@@ -83,6 +93,7 @@ BREW_PKG_CONFIG_PATH = $(shell brew --prefix elfutils)/lib/pkgconfig:$(shell bre
 BREW_LIBRARY_PATH = $(shell brew --prefix elfutils)/lib
 KERNEL_CC ?= $(shell command -v gcc || command -v clang)
 MKFS_EXT4 = $(shell brew --prefix e2fsprogs)/sbin/mkfs.ext4
+GPU_FEATURE_CHECK = python3 -c 'import ctypes, sys; lib = ctypes.CDLL(sys.argv[1]); lib.krun_has_feature.argtypes = [ctypes.c_uint64]; lib.krun_has_feature.restype = ctypes.c_int; assert lib.krun_has_feature(2) == 1, "libkrun GPU feature is disabled"'
 
 FETCH_ARCHIVES := $(SMOLVM_ARCHIVE) $(LIBKRUN_ARCHIVE) $(RUNTIME_ARCHIVE)
 ifeq ($(HOST_OS),Linux)
@@ -100,13 +111,13 @@ help:
 	  '  make deps          Install Homebrew dependencies from Brewfile' \
 	  '  make fetch         Download all pinned source/runtime archives' \
 	  '  make verify        Verify every downloaded archive checksum' \
-	  '  make build         Recreate the proven CPU-only distribution in .build/stage' \
+	  '  make build         Recreate the source-built distribution in .build/stage' \
 	  '  make check         Inspect the manually built artifacts' \
 	  '  make formula-check Run style, audit, and the installed Formula test' \
 	  '  make smoke-installed Boot the Homebrew-installed smolvm and run a guest command' \
 	  '  make clean         Remove generated .build state' \
 	  '' \
-	  'The build is intentionally GPU-disabled. See docs/smolvm-source-build.md.'
+	  'Linux builds include GPU support; macOS remains CPU-only.'
 
 deps:
 	brew bundle --file="$(CURDIR)/Brewfile"
@@ -206,15 +217,30 @@ $(INIT_KRUN): $(PREPARED)
 build-libkrun: $(LIBKRUN_OUTPUT)
 
 $(LIBKRUN_OUTPUT): $(INIT_KRUN)
+ifeq ($(HOST_OS),Linux)
 	cd "$(LIBKRUN_SRC)" && env \
 	  CARGO_HOME="$(CARGO_HOME)" \
 	  CARGO_TARGET_DIR="$(TARGET_DIR)/libkrun" \
 	  KRUN_INIT_BINARY_PATH="$(INIT_KRUN)" \
+	  LIBCLANG_PATH="$(LLVM_LIB)" \
+	  LIBRARY_PATH="$(GPU_LIBRARY_PATH)$${LIBRARY_PATH:+:$$LIBRARY_PATH}" \
+	  PKG_CONFIG_PATH="$(GPU_PKG_CONFIG_PATH)$${PKG_CONFIG_PATH:+:$$PKG_CONFIG_PATH}" \
 	  RUSTFLAGS="$${RUSTFLAGS:+$$RUSTFLAGS }-C relro-level=partial" \
-	  cargo build --release --locked -p libkrun --features blk,net
+	  cargo build --release --locked -p libkrun --features "$(LIBKRUN_FEATURES)"
+else
+	cd "$(LIBKRUN_SRC)" && env \
+	  CARGO_HOME="$(CARGO_HOME)" \
+	  CARGO_TARGET_DIR="$(TARGET_DIR)/libkrun" \
+	  KRUN_INIT_BINARY_PATH="$(INIT_KRUN)" \
+	  cargo build --release --locked -p libkrun --features "$(LIBKRUN_FEATURES)"
+endif
 	cp "$@" "$(STAGE_DIR)/lib/$(LIBKRUN_NAME)"
 ifeq ($(HOST_OS),Linux)
 	ln -sfn "libkrun.so" "$(STAGE_DIR)/lib/libkrun.so.1"
+	ln -sfn "$(BZIP2_LIB)/libbz2.so.1.0" "$(STAGE_DIR)/lib/libbz2.so.1.0"
+	ln -sfn "$(LIBEPOXY_LIB)/libepoxy.so.0" "$(STAGE_DIR)/lib/libepoxy.so.0"
+	ln -sfn "$(VIRGL_LIB)/libvirglrenderer.so.1" "$(STAGE_DIR)/lib/libvirglrenderer.so.1"
+	ln -sfn "$(VIRGL_LIBEXEC)/virgl_render_server" "$(STAGE_DIR)/lib/virgl_render_server"
 endif
 
 build-libkrunfw: $(LIBKRUNFW_MARKER)
@@ -285,6 +311,11 @@ check: $(BUILD_COMPLETE)
 	tar -tf "$(STAGE_DIR)/agent-rootfs.tar" | grep -Fx './init.krun'
 	ls -l "$(STAGE_DIR)/lib"
 	du -h "$(STAGE_DIR)/storage-template.ext4" "$(STAGE_DIR)/overlay-template.ext4"
+ifeq ($(HOST_OS),Linux)
+	test -x "$(STAGE_DIR)/lib/virgl_render_server"
+	env LD_LIBRARY_PATH="$(STAGE_DIR)/lib" \
+	  $(GPU_FEATURE_CHECK) "$(STAGE_DIR)/lib/libkrun.so"
+endif
 
 formula-check:
 	env HOMEBREW_CACHE="$(BUILD_DIR)/homebrew-cache" HOMEBREW_NO_AUTO_UPDATE=1 \
@@ -315,6 +346,10 @@ smoke-installed:
 	    printf '/dev/kvm is not readable and writable by this user\n' >&2; \
 	    exit 1; \
 	  }; \
+	  libdir="$$(brew --prefix smolvm)/libexec/lib"; \
+	  test -x "$$libdir/virgl_render_server"; \
+	  env LD_LIBRARY_PATH="$$libdir" \
+	    $(GPU_FEATURE_CHECK) "$$libdir/libkrun.so"; \
 	fi
 	@tmpdir="$$(mktemp -d)"; \
 	trap 'rm -rf "$$tmpdir"' EXIT; \

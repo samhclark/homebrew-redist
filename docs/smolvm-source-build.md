@@ -1,15 +1,17 @@
 # smolvm source-build handoff
 
-Last updated: June 6, 2026.
+Last updated: June 7, 2026.
 
 ## Current state
 
-The tap's only Formula, `smolvm`, has been reworked from installing an upstream
-binary archive to building the host-side software from pinned source:
+The `smolvm` Formula has been reworked from installing an upstream binary
+archive to building the host-side software from pinned source:
 
 - smolvm v1.0.1 is built from its tag archive.
 - The smol-machines libkrun fork is built from commit
   `e85a254ac1a1a2be58fb5b54e10937fecc55d268`.
+- On Linux, libkrun is built with `blk,net,gpu` against the tap's
+  `smolvm-virglrenderer` Formula. macOS remains on `blk,net`.
 - On Linux, the smol-machines libkrunfw fork is built from commit
   `516ceece6aed60ccc84ac8faa459885062e39400`, including its patched Linux
   6.12.87 guest kernel.
@@ -18,6 +20,9 @@ binary archive to building the host-side software from pinned source:
 - The v1.0.1 release archive remains as a bootstrap for the Alpine guest rootfs.
 - The guest rootfs is stored as `agent-rootfs.tar` in the keg. Upstream smolvm
   extracts it atomically into the user's cache on first use.
+- The Linux keg stages version-stable symlinks for libepoxy, libbz2,
+  libvirglrenderer, and `virgl_render_server` beside libkrun, matching the
+  lookup paths in smolvm v1.0.1.
 - On macOS arm64, `libkrunfw.5.dylib` also remains sourced from the release
   archive because its Linux guest kernel cannot be built natively on macOS
   without an existing VM or cross-build arrangement.
@@ -27,23 +32,13 @@ binary archive to building the host-side software from pinned source:
 The generated Cargo lockfile is committed at
 `Resources/smolvm/Cargo.lock`. Upstream v1.0.1 does not include one.
 
-The sibling checkout at `../../smol-machines/smolvm` is currently four commits
-behind its `origin/main`, and its submodules are not initialized after the
-reboot. This does not affect the Formula: the v1.0.1 tag records the libkrun and
-libkrunfw commits above, and the Formula downloads those commits directly.
+The sibling checkout at `../../smol-machines/smolvm` is not required for a
+build. The v1.0.1 tag records the libkrun and libkrunfw commits above, and the
+Formula downloads those exact commits directly.
 
-The working tree was already one commit ahead of `origin/main` before this
-work, at commit `f1315de` (`smolvm: declare bundled libkrunfw + Linux kernel
-licenses`). The untracked `reproduce.sh` also predates the source Formula work
-and demonstrates the upstream v1.0.1 release's `init.krun` architecture issue.
-Do not discard either item accidentally.
-
-After the June 6 reboot, `brew bundle check --file=Brewfile` confirmed that all
-listed dependencies are installed. It also reported unrelated conflict markers
-in Homebrew core's local `Formula/p/python@3.13.rb`. The Brewfile still passed,
-and `brew style Formula/smolvm.rb` passed, but repair or update the local
-`homebrew/core` checkout before treating future audit failures as problems in
-this tap.
+The untracked `reproduce.sh` predates this work and demonstrates the upstream
+v1.0.1 release's `init.krun` architecture issue. It is user-owned and should not
+be discarded.
 
 ## Proven result
 
@@ -53,8 +48,9 @@ The complete Formula was built on Linux x86_64 using:
 brew reinstall --build-from-source samhclark/redist/smolvm
 ```
 
-That build completed in 11 minutes 20 seconds. The installed package reported
-`smolvm 1.0.1`. The following checks passed:
+The GPU-enabled revision build completed in 11 minutes 17 seconds. Homebrew
+installed package revision `1.0.1_1`, while the CLI correctly reported upstream
+version `smolvm 1.0.1`. The following checks passed:
 
 - `brew style Formula/smolvm.rb`
 - `brew audit --strict --formula samhclark/redist/smolvm`
@@ -64,6 +60,10 @@ That build completed in 11 minutes 20 seconds. The installed package reported
   `init.krun` copies, libkrun, libkrunfw, and the guest agent.
 - Static linkage for `init.krun`.
 - libkrun SONAME `libkrun.so.1`.
+- `krun_has_feature(KRUN_FEATURE_GPU)` returned `1`.
+- libkrun's direct `libbz2.so.1.0` and `libvirglrenderer.so.1` dependencies
+  resolved from the installed keg.
+- The staged `virgl_render_server` is executable.
 - Required fork-specific symbols:
   `krun_add_disk2`, `krun_add_net_unixstream`,
   `krun_create_disk_overlay`, `krun_set_egress_policy`, and
@@ -71,12 +71,17 @@ That build completed in 11 minutes 20 seconds. The installed package reported
 - Correct libkrunfw symlink chain ending at `libkrunfw.so.5.4.0`.
 - Sparse 512 MiB ext4 templates, using about 17 MiB of real disk each.
 
-The installed Linux x86_64 Formula now also passes a local KVM guest boot test:
+The installed Linux x86_64 revision also passes a local KVM guest boot test:
 its bundled bare Alpine guest booted and returned the expected marker from an
-`echo` command. Linux x86_64, Linux arm64, and macOS 26 arm64 all pass the
-complete test-bot build, bottle reinstall, linkage, and Formula test sequence.
-The successful three-platform run is
+`echo` command.
+
+The previous CPU-only smolvm revision passed the complete test-bot build,
+bottle reinstall, linkage, and Formula test sequence on Linux x86_64, Linux
+arm64, and macOS 26 arm64. That successful run is
 <https://github.com/samhclark/homebrew-redist/actions/runs/27076010107>.
+The separately packaged `smolvm-virglrenderer` 1.3.0 bottles are published for
+Linux x86_64 and arm64. The new `smolvm` GPU revision still needs its own
+three-platform CI run and bottle publication after these commits are pushed.
 
 ## Reproducing after a reboot
 
@@ -89,7 +94,7 @@ Install the known Homebrew dependencies:
 brew bundle --file=Brewfile
 ```
 
-Recreate the manual CPU-only build:
+Recreate the manual build:
 
 ```sh
 make build
@@ -98,7 +103,8 @@ make check
 
 The Makefile downloads and verifies every pinned archive needed on the current
 platform, extracts sources, applies the two compatibility patches, builds the
-host stack, and places a distribution-like result under `.build/stage`.
+host stack, and places a distribution-like result under `.build/stage`. Linux
+includes GPU support; macOS remains CPU-only.
 
 Use `make clean` before retrying after changing a pin or build patch. The
 Makefile uses stamp files and will otherwise retain the previous prepared
@@ -120,11 +126,12 @@ host, run the end-to-end guest boot smoke test:
 make smoke-installed
 ```
 
-This resolves the Homebrew-installed `smolvm`, checks `/dev/kvm` access on
-Linux, and boots the bundled bare Alpine guest with one vCPU and 512 MiB of
-memory. The guest must return `smolvm-boot-smoke-ok`. It does not pull an OCI
-image or enable guest networking, and it isolates cache/data state under a
-temporary home that is removed afterward.
+This resolves the Homebrew-installed `smolvm`. On Linux it first checks that
+the render server exists and libkrun reports its GPU feature, then checks
+`/dev/kvm` access. It boots the bundled bare Alpine guest with one vCPU and
+512 MiB of memory. The guest must return `smolvm-boot-smoke-ok`. It does not
+pull an OCI image or enable guest networking, and it isolates cache/data state
+under a temporary home that is removed afterward.
 
 GNU `timeout` is used as a 120-second outer guard when available; smolvm's own
 60-second guest-command timeout is always used. Override the defaults when
@@ -145,7 +152,8 @@ Homebrew's setup action. The workflow runs for pull requests, pushes to `main`,
 and manual dispatches. It checks tap syntax, builds changed Formulae from
 source on pull requests, and always builds smolvm on `main` and manual runs. It
 runs the Formula tests and retains platform-specific bottles as seven-day
-workflow artifacts.
+workflow artifacts. On Linux, the Formula test loads libkrun and asserts that
+its GPU feature is enabled.
 
 The test workflow deliberately has read-only repository permissions.
 
@@ -247,6 +255,7 @@ The exact Homebrew dependencies are recorded in `Brewfile`.
 Common:
 
 - `e2fsprogs`: creates the ext4 disk templates.
+- `perl`: applies source compatibility patches in the Makefile workflow.
 - `pkgconf`: resolves C build dependencies.
 - `rust`: builds libkrun and smolvm.
 - `zig`: cross-builds a static Linux `init.krun`, including from macOS.
@@ -254,16 +263,26 @@ Common:
 Linux-only:
 
 - `bc`, `bison`, `cpio`, `flex`: Linux kernel build tools.
+- `bzip2`: direct runtime dependency introduced by libkrun's GPU feature.
 - `elfutils`: libelf support needed by kernel host tools.
 - `gpatch`: GNU patch for libkrunfw's kernel patches.
+- `llvm`: provides libclang for the GPU bindings generated by bindgen.
+- `libepoxy`: loaded explicitly by smolvm before virglrenderer.
 - `openssl@3`: kernel host-side crypto tooling.
 - `python@3.14`: runs libkrunfw's bundle generator.
+- `smolvm-virglrenderer`: supplies libvirglrenderer and
+  `virgl_render_server`.
 - `xz`: extracts the Linux kernel source archive.
 - `zlib-ng-compat`, `zstd`: transitive libelf compression dependencies that
   must be visible through pkg-config.
 
-A host C compiler, GNU-compatible `make`, tar, Perl, and curl are also expected.
-On the verified Fedora host these came from the operating system rather than
+The Brewfile also records virglrenderer development dependencies such as
+libdrm, Mesa, Vulkan loader, Meson, Ninja, and libyaml so that its Formula can
+be reproduced independently. X11 libraries and `xorgproto` arrive through that
+dependency graph.
+
+A host C compiler, GNU-compatible `make`, tar, and curl are also expected. On
+the verified Fedora host these came from the operating system rather than
 Homebrew.
 
 ## Important build details
@@ -294,18 +313,38 @@ and adds `extern char **environ;`.
 
 ### libkrun
 
-The proven feature set is block and networking only:
+The proven Linux feature set is block, networking, and GPU:
 
 ```sh
 KRUN_INIT_BINARY_PATH=/absolute/path/to/init.krun \
+LIBCLANG_PATH="$(brew --prefix llvm)/lib" \
+LIBRARY_PATH="$(brew --prefix smolvm-virglrenderer)/lib:\
+$(brew --prefix bzip2)/lib${LIBRARY_PATH:+:$LIBRARY_PATH}" \
+PKG_CONFIG_PATH="$(brew --prefix smolvm-virglrenderer)/lib/pkgconfig:\
+$(brew --prefix xorgproto)/share/pkgconfig\
+${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" \
 RUSTFLAGS="-C relro-level=partial" \
-cargo build --release --locked -p libkrun --features blk,net
+cargo build --release --locked -p libkrun --features blk,net,gpu
 ```
 
 `KRUN_INIT_BINARY_PATH` is mandatory because libkrun embeds this ELF at compile
-time. Partial RELRO matches the upstream distribution build and will be
-required if the GPU library's direct dependency is later stripped with
-`patchelf`. It is harmless in the current non-GPU build.
+time. `LIBCLANG_PATH` is required by bindgen. The pkg-config path includes
+`xorgproto` because libepoxy's private X11 dependency chain needs protocol
+metadata that Homebrew installs under `share/pkgconfig`. `LIBRARY_PATH` is
+required because the pinned rutabaga build emits `-lvirglrenderer` but does not
+propagate virglrenderer's native search directory to libkrun's final cdylib
+link.
+
+Partial RELRO matches the upstream distribution build. This tap keeps
+libkrun's normal virglrenderer `NEEDED` entry because virglrenderer is a
+mandatory Linux dependency, rather than deleting it with `patchelf`.
+
+The macOS build remains:
+
+```sh
+KRUN_INIT_BINARY_PATH=/absolute/path/to/init.krun \
+cargo build --release --locked -p libkrun --features blk,net
+```
 
 ### libkrunfw and the Linux kernel
 
@@ -433,7 +472,7 @@ The costs are real:
 
 - libkrun embeds `init.krun`, so the package includes smolvm-specific behavior.
 - The fork provides APIs that smolvm requires and generic libkrun may not.
-- Build features (`blk`, `net`, and eventually `gpu`) become package-level API.
+- Build features (`blk`, `net`, and `gpu`) become package-level API.
 - libkrun and libkrunfw revisions must be updated and tested together.
 - Homebrew dependency versioning is not a substitute for testing that exact
   pair.
@@ -452,14 +491,14 @@ at each dependency's version-stable `opt_lib` path. A cleaner but larger change
 would teach smolvm separate libkrun and libkrunfw search paths. Linux loader
 paths, macOS install names/rpaths, and codesigning all need dedicated tests.
 
-## GPU support feasibility
+## GPU support
 
-`Formula/smolvm-virglrenderer.rb` is the first GPU packaging experiment. It
-currently targets Linux only and pins upstream virglrenderer 1.3.0.
+`Formula/smolvm-virglrenderer.rb` targets Linux and pins upstream
+virglrenderer 1.3.0.
 
-The Formula has been built from source and bottled locally on Linux x86_64.
-The source-built and bottle-poured installations both pass the Formula test
-and strict Homebrew linkage checks. The installed library exports
+The Formula has published bottles for Linux x86_64 and arm64. Source-built and
+bottle-poured installations pass the Formula test and strict Homebrew linkage
+checks. The installed library exports
 `virgl_renderer_context_get_poll_fd` and `virgl_renderer_context_poll`, which
 are the extra polling APIs used by smolvm's pinned libkrun fork.
 
@@ -488,50 +527,51 @@ its dynamic Vulkan loader still searches for `libvulkan.so.1` and
 loader patch or link-time MoltenVK integration, plus native bottle and runtime
 testing, before `depends_on :linux` can be removed.
 
-A likely tap design is:
+The Linux integration is now implemented:
 
-1. Prove the Linux virglrenderer Formula builds, bottles, and exposes the
-   render-server callback and polling APIs used by smolvm's libkrun fork.
-2. Build libkrun with `--features blk,net,gpu` and add `llvm` so bindgen can
-   find libclang (`LIBCLANG_PATH="$(brew --prefix llvm)/lib"`).
-3. Symlink the needed virglrenderer libraries and, on Linux,
-   `virgl_render_server` into smolvm's `libexec/lib`, or patch the runtime to
-   search the dependency's `opt_lib` and `opt_bin`.
-4. Run an end-to-end guest Vulkan test on Linux.
-5. Implement and test the separate macOS MoltenVK loader path.
-6. Decide whether virglrenderer is mandatory or whether a separate
-   `smolvm-gpu` Formula is warranted.
+- `smolvm` depends on `smolvm-virglrenderer`, libepoxy, and bzip2.
+- LLVM is a build-only dependency for bindgen.
+- The pinned libkrun builds with `--features blk,net,gpu`.
+- libepoxy, libbz2, libvirglrenderer, and `virgl_render_server` are symlinked
+  into `smolvm`'s `libexec/lib`.
+- The Formula test and Makefile checks call `krun_has_feature(2)` and require
+  it to return `1`.
+- The normal KVM boot smoke test passes with this runtime layout.
 
 Modern Homebrew Formulae do not have a good user-facing optional-feature model.
-For this tap, making GPU dependencies mandatory is simpler. A separate
-`smolvm-gpu` Formula is another option if the added dependency size is
-unacceptable.
+For this tap, making GPU dependencies mandatory on Linux is simpler than a
+separate `smolvm-gpu` variant. Splitting the feature would duplicate or
+conflict with the main `smolvm` executable and libkrun keg, while still
+requiring coordinated revisions.
 
 The upstream Linux release process makes GPU optional at runtime by building
 libkrun with partial RELRO, removing its hard virglrenderer `NEEDED` entry with
-`patchelf`, and using lazy symbol binding. A dedicated virglrenderer dependency
-would avoid that fragile step: keep the normal dynamic dependency and ensure
-the library is always installed.
+`patchelf`, and using lazy symbol binding. This tap avoids that fragile step:
+the dedicated virglrenderer dependency is mandatory, and libkrun keeps its
+normal dynamic dependency.
 
-Host packaging is only half of the work. An end-to-end GPU test must confirm:
+Host packaging is proven on Linux x86_64 locally, but a real guest Vulkan
+workload is still missing. That test must confirm:
 
-- The pinned libkrun fork's GPU feature builds on each platform.
-- libkrun can locate virglrenderer and its transitive libraries at runtime.
-- macOS install names, rpaths, and ad-hoc signatures remain valid.
 - The libkrunfw kernel enables the required virtio-gpu support.
 - The guest workload contains a compatible Mesa Venus driver.
 - A real Vulkan workload succeeds inside a VM.
+
+macOS remains a separate project because it also needs a MoltenVK-capable
+virglrenderer package, install-name/rpath handling, and codesigning tests.
 
 GPU support expands the guest-facing rendering attack surface, so the
 virglrenderer pin will need regular security updates.
 
 ## Recommended next steps
 
-1. Confirm the `smolvm-virglrenderer` CI bottles on Linux x86_64 and arm64.
-2. Build `smolvm`'s pinned libkrun with `blk,net,gpu` against that Formula.
-3. Wire the virglrenderer library and render server into smolvm's runtime.
-4. Run a guest Vulkan smoke test.
-5. Add and test the macOS MoltenVK loader patch.
+1. Push the GPU integration commits and confirm `smolvm` CI on Linux x86_64,
+   Linux arm64, and macOS arm64.
+2. Publish the resulting `smolvm` revision bottles with `publish.yml`.
+3. Reinstall the Linux bottle and rerun `make smoke-installed`.
+4. Add a guest Vulkan smoke test using a pinned workload that does not make
+   packaging tests depend on mutable network content.
+5. Add and test the macOS MoltenVK loader path.
 6. Reconsider separate `smolvm-libkrunfw` and `smolvm-libkrun` Formulae after
    the GPU dependency graph is proven.
 7. For any real future smolvm release, follow the documented update checklist.
