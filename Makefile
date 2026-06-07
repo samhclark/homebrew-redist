@@ -27,6 +27,9 @@ SMOLVM_BIN ?= $(shell prefix="$$(brew --prefix smolvm 2>/dev/null)" && printf '%
 SMOKE_TIMEOUT ?= 120
 SMOKE_GUEST_TIMEOUT ?= 60s
 SMOKE_MARKER := smolvm-boot-smoke-ok
+GPU_SMOKE_TIMEOUT ?= 180
+GPU_SMOKE_GUEST_TIMEOUT ?= 120s
+GPU_SMOKE_MARKER := smolvm-gpu-device-smoke-ok
 
 SMOLVM_ARCHIVE := $(DOWNLOAD_DIR)/smolvm-$(SMOLVM_VERSION).tar.gz
 LIBKRUN_ARCHIVE := $(DOWNLOAD_DIR)/libkrun-$(LIBKRUN_REV).tar.gz
@@ -101,7 +104,7 @@ FETCH_ARCHIVES += $(LIBKRUNFW_ARCHIVE) $(KERNEL_ARCHIVE) $(PYELFTOOLS_ARCHIVE)
 endif
 
 .PHONY: help deps fetch verify prepare build build-init build-libkrun
-.PHONY: build-libkrunfw build-smolvm stage check formula-check smoke-installed
+.PHONY: build-libkrunfw build-smolvm stage check formula-check smoke-installed smoke-gpu-installed
 .PHONY: clean
 
 help:
@@ -115,6 +118,7 @@ help:
 	  '  make check         Inspect the manually built artifacts' \
 	  '  make formula-check Run style, audit, and the installed Formula test' \
 	  '  make smoke-installed Boot the Homebrew-installed smolvm and run a guest command' \
+	  '  make smoke-gpu-installed Verify virtio-gpu devices in an Alpine guest' \
 	  '  make clean         Remove generated .build state' \
 	  '' \
 	  'Linux builds include GPU support; macOS remains CPU-only.'
@@ -381,6 +385,57 @@ smoke-installed:
 	fi; \
 	grep -Fq -- "$(SMOKE_MARKER)" <<<"$$output" || { \
 	  printf 'smolvm VM smoke marker was not returned by the guest\n' >&2; \
+	  exit 1; \
+	}
+
+smoke-gpu-installed:
+	@test "$(HOST_OS)" = "Linux" || { \
+	  printf 'the installed GPU smoke test currently supports Linux only\n' >&2; \
+	  exit 1; \
+	}
+	@test -x "$(SMOLVM_BIN)" || { \
+	  printf 'smolvm is not installed by Homebrew; run brew install samhclark/redist/smolvm\n' >&2; \
+	  exit 1; \
+	}
+	@test -c /dev/kvm && test -r /dev/kvm && test -w /dev/kvm || { \
+	  printf '/dev/kvm is unavailable or inaccessible\n' >&2; \
+	  exit 1; \
+	}
+	@test -c /dev/dri/renderD128 || { \
+	  printf '/dev/dri/renderD128 is unavailable on the host\n' >&2; \
+	  exit 1; \
+	}
+	@libdir="$$(brew --prefix smolvm)/libexec/lib"; \
+	test -x "$$libdir/virgl_render_server"; \
+	env LD_LIBRARY_PATH="$$libdir" \
+	  $(GPU_FEATURE_CHECK) "$$libdir/libkrun.so"
+	@tmpdir="$$(mktemp -d)"; \
+	trap 'rm -rf "$$tmpdir"' EXIT; \
+	mkdir -p "$$tmpdir/home"; \
+	host_timeout=(); \
+	if command -v timeout >/dev/null; then \
+	  host_timeout=(timeout "$(GPU_SMOKE_TIMEOUT)"); \
+	fi; \
+	if output="$$(env \
+	  HOME="$$tmpdir/home" \
+	  XDG_CACHE_HOME="$$tmpdir/cache" \
+	  XDG_DATA_HOME="$$tmpdir/data" \
+	  "$${host_timeout[@]}" "$(SMOLVM_BIN)" machine run \
+	    --gpu --gpu-vram 512 --net --image alpine:latest \
+	    --cpus 1 --mem 1024 --timeout "$(GPU_SMOKE_GUEST_TIMEOUT)" \
+	    -- sh -c 'test -c /dev/dri/renderD128 && test -c /dev/dri/card0 && echo "$(GPU_SMOKE_MARKER)"' \
+	    2>&1)"; then \
+	  status=0; \
+	else \
+	  status=$$?; \
+	fi; \
+	printf '%s\n' "$$output"; \
+	if [[ $$status -ne 0 ]]; then \
+	  printf 'smolvm GPU smoke test failed with exit status %s\n' "$$status" >&2; \
+	  exit "$$status"; \
+	fi; \
+	grep -Fq -- "$(GPU_SMOKE_MARKER)" <<<"$$output" || { \
+	  printf 'smolvm GPU smoke marker was not returned by the guest\n' >&2; \
 	  exit 1; \
 	}
 
