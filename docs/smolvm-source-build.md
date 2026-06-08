@@ -116,8 +116,8 @@ The intended build is:
 2. Apply the fork's `patches/0*.patch` series.
 3. Copy `config-libkrunfw_aarch64` into the kernel tree.
 4. Patch `scripts/mod/file2alias.c` for the Darwin host `uuid_t` conflict.
-5. Provide tiny host-only `byteswap.h` and `elf.h` wrappers. The `elf.h`
-   wrapper includes Homebrew `libelf`'s replacement ELF definitions.
+5. Provide a tiny host-only `byteswap.h` and copy musl 1.2.5's standalone
+   `elf.h` into the host include directory.
 6. Build `arch/arm64/boot/Image` with Homebrew `aarch64-elf-gcc` and GNU make.
 7. Run libkrunfw's `bin2cbundle.py --os Darwin -t Image`.
 8. Compile `kernel.c` with the native macOS compiler into
@@ -138,11 +138,18 @@ The same `Image` was converted to `kernel.c`, compiled into a Linux shared
 object as a proxy for the final C bundle, and exported
 `krunfw_get_kernel`/`krunfw_get_version`; `krunfw_get_version()` returned `5`.
 
-What remains unknown until GitHub Actions runs on `macos-26`:
+The first `macos-26` build reached the kernel's `modpost` host tool, then
+failed because Homebrew `libelf` does not define the architecture-specific
+ELF relocation constants that `modpost` compiles for every supported target.
+The build now uses musl's standalone `elf.h`, which includes those Linux ELF
+definitions without requiring a Linux libc installation on macOS. A local
+rebuild with the copied musl header compiled every kernel host tool and
+produced the same `Image` hash shown above.
 
-- Whether Homebrew `libelf`'s headers plus the local `byteswap.h` and `elf.h`
-  wrappers cover every Darwin host-tool include used by this kernel
-  configuration.
+What remains unknown until GitHub Actions reruns on `macos-26`:
+
+- Whether musl's `elf.h` plus the local `byteswap.h` covers every Darwin
+  host-tool include used by this kernel configuration.
 - Whether Apple clang can compile the generated 49 MiB `kernel.c` into a
   signed Mach-O dylib on the runner within the 90-minute job timeout.
 - Whether the resulting bottle passes Homebrew's Mach-O relocation checks.
@@ -439,12 +446,14 @@ macOS-only:
   guest kernel.
 - `bc`, `bison`, `cpio`, `flex`: Linux kernel build tools.
 - `gpatch`: applies the libkrunfw kernel patch series.
-- `libelf`: provides replacement ELF definitions for kernel host tools on
-  Darwin.
 - `make`: provides GNU `gmake`; Apple's bundled make is too old to trust for
   the kernel build.
 - `python@3.14`: runs libkrunfw's bundle generator.
 - `xz`: extracts the Linux kernel source archive.
+
+The macOS build also downloads the pinned musl 1.2.5 source archive and uses
+only its standalone `include/elf.h` for Linux kernel host tools. musl is a
+source resource, not a Homebrew dependency.
 
 The Brewfile also records virglrenderer development dependencies such as
 libdrm, Mesa, Vulkan loader, Meson, Ninja, and libyaml so that its Formula can
@@ -570,7 +579,7 @@ requires an existing VM. Instead it builds the Linux kernel directly with:
 ```sh
 gmake -C linux-6.12.87 ARCH=arm64 CROSS_COMPILE=aarch64-elf- \
   HOSTCC=cc \
-  HOSTCFLAGS="-Ihost-include -I$(brew --prefix libelf)/include" \
+  HOSTCFLAGS="-Ihost-include" \
   KBUILD_BUILD_TIMESTAMP="Fri May  8 14:25:15 CEST 2026" \
   KBUILD_BUILD_USER=root KBUILD_BUILD_HOST=libkrunfw olddefconfig Image
 ```
@@ -782,7 +791,8 @@ virglrenderer pin will need regular security updates.
 
 ## Recommended next steps
 
-1. Push the `smolvm-libkrunfw` experiment and inspect the `macos-26` job.
+1. Push the musl `elf.h` fix and inspect the `smolvm-libkrunfw` `macos-26`
+   job.
 2. If it passes, publish the `smolvm-libkrunfw` bottle.
 3. Wire `smolvm` to depend on `smolvm-libkrunfw` on macOS, bump the `smolvm`
    revision, and remove the release-dylib extraction from its macOS branch.

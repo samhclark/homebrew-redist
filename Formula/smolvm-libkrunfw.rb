@@ -13,7 +13,6 @@ class SmolvmLibkrunfw < Formula
   depends_on "cpio" => :build
   depends_on "flex" => :build
   depends_on "gpatch" => :build
-  depends_on "libelf" => :build
   depends_on "make" => :build
   depends_on "python@3.14" => :build
   depends_on "xz" => :build
@@ -25,12 +24,20 @@ class SmolvmLibkrunfw < Formula
     sha256 "cc12a7644b4cef9e06627b29de8753e22b3d076703a9b52be84263e05c8b9830"
   end
 
+  resource "musl" do
+    url "https://musl.libc.org/releases/musl-1.2.5.tar.gz"
+    sha256 "a9a118bbe84d8764da0ea0d28b3ab3fae8477fc7e4085d90102b8596fc7c75e4"
+  end
+
   resource "pyelftools" do
     url "https://files.pythonhosted.org/packages/b9/ab/33968940b2deb3d92f5b146bc6d4009a5f95d1d06c148ea2f9ee965071af/pyelftools-0.32.tar.gz"
     sha256 "6de90ee7b8263e740c8715a925382d4099b354f29ac48ea40d840cf7aa14ace5"
   end
 
   def install
+    musl = buildpath/"musl"
+    resource("musl").stage musl
+
     pyelftools = buildpath/"pyelftools"
     resource("pyelftools").stage pyelftools
     ENV["PYTHONPATH"] = pyelftools
@@ -49,20 +56,14 @@ class SmolvmLibkrunfw < Formula
       #define bswap_32(x) __builtin_bswap32(x)
       #define bswap_64(x) __builtin_bswap64(x)
     C
-    (host_include/"elf.h").write <<~C
-      #pragma once
-      #include <libelf/libelf.h>
-    C
+    cp musl/"include/elf.h", host_include/"elf.h"
 
     ENV.prepend_path "PATH", Formula["aarch64-elf-binutils"].opt_bin
     ENV.prepend_path "PATH", Formula["aarch64-elf-gcc"].opt_bin
     ENV.prepend_path "PATH", Formula["bison"].opt_bin
     ENV.prepend_path "PATH", Formula["flex"].opt_bin
 
-    kernel_host_cflags = [
-      "-I#{host_include}",
-      "-I#{Formula["libelf"].opt_include}",
-    ].join(" ")
+    kernel_host_cflags = "-I#{host_include}"
     kernel_make = [
       Formula["make"].opt_bin/"gmake",
       "-C", linux_kernel,

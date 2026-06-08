@@ -17,7 +17,6 @@ if OS.mac?
   brew "cpio"
   brew "flex"
   brew "gpatch"
-  brew "libelf"
   brew "make"
   brew "python@3.14", link: false
   brew "xz"

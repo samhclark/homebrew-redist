@@ -11,6 +11,8 @@ LIBKRUNFW_SHA256 := c9c43a5d54a239f2bb69f1c6762ad40854a8f5c996a9890872bd3ca39d52
 LIBKRUNFW_VERSION := 5.4.0
 KERNEL_VERSION := 6.12.87
 KERNEL_SHA256 := cc12a7644b4cef9e06627b29de8753e22b3d076703a9b52be84263e05c8b9830
+MUSL_VERSION := 1.2.5
+MUSL_SHA256 := a9a118bbe84d8764da0ea0d28b3ab3fae8477fc7e4085d90102b8596fc7c75e4
 PYELFTOOLS_VERSION := 0.32
 PYELFTOOLS_SHA256 := 6de90ee7b8263e740c8715a925382d4099b354f29ac48ea40d840cf7aa14ace5
 
@@ -47,11 +49,13 @@ SMOLVM_ARCHIVE := $(DOWNLOAD_DIR)/smolvm-$(SMOLVM_VERSION).tar.gz
 LIBKRUN_ARCHIVE := $(DOWNLOAD_DIR)/libkrun-$(LIBKRUN_REV).tar.gz
 LIBKRUNFW_ARCHIVE := $(DOWNLOAD_DIR)/libkrunfw-$(LIBKRUNFW_REV).tar.gz
 KERNEL_ARCHIVE := $(DOWNLOAD_DIR)/linux-$(KERNEL_VERSION).tar.xz
+MUSL_ARCHIVE := $(DOWNLOAD_DIR)/musl-$(MUSL_VERSION).tar.gz
 PYELFTOOLS_ARCHIVE := $(DOWNLOAD_DIR)/pyelftools-$(PYELFTOOLS_VERSION).tar.gz
 
 SMOLVM_SRC := $(SOURCE_DIR)/smolvm
 LIBKRUN_SRC := $(SOURCE_DIR)/libkrun
 LIBKRUNFW_SRC := $(SOURCE_DIR)/libkrunfw
+MUSL_SRC := $(SOURCE_DIR)/musl
 PYELFTOOLS_SRC := $(SOURCE_DIR)/pyelftools
 RUNTIME_SRC := $(SOURCE_DIR)/runtime
 PREPARED := $(SOURCE_DIR)/.prepared
@@ -77,7 +81,6 @@ LIBKRUN_FEATURES := blk,net
 MACOS_CROSS_PATH := $(shell brew --prefix aarch64-elf-gcc)/bin:$(shell brew --prefix aarch64-elf-binutils)/bin:$(shell brew --prefix bison)/bin:$(shell brew --prefix flex)/bin
 MACOS_GMAKE := $(shell brew --prefix make)/bin/gmake
 MACOS_GPATCH := $(shell brew --prefix gpatch)/bin/gpatch
-MACOS_LIBELF_INCLUDE := $(shell brew --prefix libelf)/include
 MACOS_PYTHON := $(shell brew --prefix python@3.14)/bin/python3.14
 MACOS_KERNEL_SRC := $(LIBKRUNFW_SRC)/linux-$(KERNEL_VERSION)
 MACOS_HOST_INCLUDE := $(LIBKRUNFW_SRC)/host-include
@@ -118,7 +121,8 @@ MKFS_EXT4 = $(shell brew --prefix e2fsprogs)/sbin/mkfs.ext4
 GPU_FEATURE_CHECK = python3 -c 'import ctypes, sys; lib = ctypes.CDLL(sys.argv[1]); lib.krun_has_feature.argtypes = [ctypes.c_uint64]; lib.krun_has_feature.restype = ctypes.c_int; assert lib.krun_has_feature(2) == 1, "libkrun GPU feature is disabled"'
 
 FETCH_ARCHIVES := $(SMOLVM_ARCHIVE) $(LIBKRUN_ARCHIVE) $(LIBKRUNFW_ARCHIVE)
-FETCH_ARCHIVES += $(KERNEL_ARCHIVE) $(PYELFTOOLS_ARCHIVE) $(RUNTIME_ARCHIVE)
+FETCH_ARCHIVES += $(KERNEL_ARCHIVE) $(MUSL_ARCHIVE) $(PYELFTOOLS_ARCHIVE)
+FETCH_ARCHIVES += $(RUNTIME_ARCHIVE)
 
 .PHONY: help deps fetch verify prepare build build-init build-libkrun
 .PHONY: build-libkrunfw build-smolvm stage check formula-check
@@ -177,6 +181,11 @@ $(KERNEL_ARCHIVE): | $(DOWNLOAD_DIR)
 	  "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-$(KERNEL_VERSION).tar.xz"
 	mv "$@.tmp" "$@"
 
+$(MUSL_ARCHIVE): | $(DOWNLOAD_DIR)
+	curl -fL --retry 3 -o "$@.tmp" \
+	  "https://musl.libc.org/releases/musl-$(MUSL_VERSION).tar.gz"
+	mv "$@.tmp" "$@"
+
 $(PYELFTOOLS_ARCHIVE): | $(DOWNLOAD_DIR)
 	curl -fL --retry 3 -o "$@.tmp" \
 	  "https://files.pythonhosted.org/packages/b9/ab/33968940b2deb3d92f5b146bc6d4009a5f95d1d06c148ea2f9ee965071af/pyelftools-$(PYELFTOOLS_VERSION).tar.gz"
@@ -205,6 +214,7 @@ verify: fetch
 	check "$(LIBKRUN_SHA256)" "$(LIBKRUN_ARCHIVE)"; \
 	check "$(LIBKRUNFW_SHA256)" "$(LIBKRUNFW_ARCHIVE)"; \
 	check "$(KERNEL_SHA256)" "$(KERNEL_ARCHIVE)"; \
+	check "$(MUSL_SHA256)" "$(MUSL_ARCHIVE)"; \
 	check "$(PYELFTOOLS_SHA256)" "$(PYELFTOOLS_ARCHIVE)"; \
 	check "$(RUNTIME_SHA256)" "$(RUNTIME_ARCHIVE)"
 
@@ -213,10 +223,11 @@ prepare: $(PREPARED)
 $(PREPARED): verify Resources/smolvm/Cargo.lock
 	mkdir -p "$(SOURCE_DIR)" "$(TARGET_DIR)" "$(STAGE_DIR)/lib" "$(CARGO_HOME)"
 	mkdir -p "$(SMOLVM_SRC)" "$(LIBKRUN_SRC)" "$(LIBKRUNFW_SRC)"
-	mkdir -p "$(PYELFTOOLS_SRC)" "$(RUNTIME_SRC)"
+	mkdir -p "$(MUSL_SRC)" "$(PYELFTOOLS_SRC)" "$(RUNTIME_SRC)"
 	tar -xf "$(SMOLVM_ARCHIVE)" -C "$(SMOLVM_SRC)" --strip-components=1
 	tar -xf "$(LIBKRUN_ARCHIVE)" -C "$(LIBKRUN_SRC)" --strip-components=1
 	tar -xf "$(LIBKRUNFW_ARCHIVE)" -C "$(LIBKRUNFW_SRC)" --strip-components=1
+	tar -xf "$(MUSL_ARCHIVE)" -C "$(MUSL_SRC)" --strip-components=1
 	tar -xf "$(PYELFTOOLS_ARCHIVE)" -C "$(PYELFTOOLS_SRC)" --strip-components=1
 	tar -xf "$(RUNTIME_ARCHIVE)" -C "$(RUNTIME_SRC)" --strip-components=1
 	cp Resources/smolvm/Cargo.lock "$(SMOLVM_SRC)/Cargo.lock"
@@ -312,22 +323,19 @@ else
 		  '#define bswap_32(x) __builtin_bswap32(x)' \
 		  '#define bswap_64(x) __builtin_bswap64(x)' \
 		  > "$(MACOS_HOST_INCLUDE)/byteswap.h"
-		printf '%s\n' \
-		  '#pragma once' \
-		  '#include <libelf/libelf.h>' \
-		  > "$(MACOS_HOST_INCLUDE)/elf.h"
+		cp "$(MUSL_SRC)/include/elf.h" "$(MACOS_HOST_INCLUDE)/elf.h"
 		env PATH="$(MACOS_CROSS_PATH):$$PATH" \
 		  "$(MACOS_GMAKE)" -C "$(MACOS_KERNEL_SRC)" -j"$(JOBS)" \
 		    ARCH=arm64 CROSS_COMPILE=aarch64-elf- \
 		    HOSTCC="$(KERNEL_CC)" \
-		    HOSTCFLAGS="-I$(MACOS_HOST_INCLUDE) -I$(MACOS_LIBELF_INCLUDE)" \
+		    HOSTCFLAGS="-I$(MACOS_HOST_INCLUDE)" \
 		    KBUILD_BUILD_TIMESTAMP='Fri May  8 14:25:15 CEST 2026' \
 		    KBUILD_BUILD_USER=root KBUILD_BUILD_HOST=libkrunfw olddefconfig
 		env PATH="$(MACOS_CROSS_PATH):$$PATH" \
 		  "$(MACOS_GMAKE)" -C "$(MACOS_KERNEL_SRC)" -j"$(JOBS)" \
 		    ARCH=arm64 CROSS_COMPILE=aarch64-elf- \
 		    HOSTCC="$(KERNEL_CC)" \
-		    HOSTCFLAGS="-I$(MACOS_HOST_INCLUDE) -I$(MACOS_LIBELF_INCLUDE)" \
+		    HOSTCFLAGS="-I$(MACOS_HOST_INCLUDE)" \
 		    KBUILD_BUILD_TIMESTAMP='Fri May  8 14:25:15 CEST 2026' \
 		    KBUILD_BUILD_USER=root KBUILD_BUILD_HOST=libkrunfw Image
 		cd "$(LIBKRUNFW_SRC)" && env PYTHONPATH="$(PYELFTOOLS_SRC)" \
