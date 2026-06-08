@@ -146,13 +146,15 @@ definitions without requiring a Linux libc installation on macOS. A local
 rebuild with the copied musl header compiled every kernel host tool and
 produced the same `Image` hash shown above.
 
-What remains unknown until GitHub Actions reruns on `macos-26`:
+The next `macos-26` run completed the source build, created and poured the
+bottle, passed both Homebrew linkage checks, and reached the Formula test. The
+test exposed that the split Formula was missing `preserve_rpath`, so Homebrew
+rewrote the dylib ID to an absolute `opt` path. The Formula now declares
+`preserve_rpath`, matching the existing `smolvm` Formula and the bottle
+relocation design below.
 
-- Whether musl's `elf.h` plus the local `byteswap.h` covers every Darwin
-  host-tool include used by this kernel configuration.
-- Whether Apple clang can compile the generated 49 MiB `kernel.c` into a
-  signed Mach-O dylib on the runner within the 90-minute job timeout.
-- Whether the resulting bottle passes Homebrew's Mach-O relocation checks.
+What remains unknown until GitHub Actions reruns on `macos-26` is whether the
+preserved `@rpath` ID passes the Formula test after the bottle is poured.
 
 If this formula passes CI, publish its macOS bottle first, then wire `smolvm`
 to depend on `smolvm-libkrunfw` on macOS and replace the copied release dylib

@@ -19,6 +19,8 @@ class SmolvmLibkrunfw < Formula
   depends_on arch: :arm64
   depends_on :macos
 
+  preserve_rpath
+
   resource "linux-kernel" do
     url "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.12.87.tar.xz"
     sha256 "cc12a7644b4cef9e06627b29de8753e22b3d076703a9b52be84263e05c8b9830"
