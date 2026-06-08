@@ -155,3 +155,57 @@ jobs:
           path: "*.bottle.*"
           if-no-files-found: ignore
           retention-days: 7
+
+  test-libkrunfw:
+    if: github.event_name != 'pull_request'
+    name: brew test-bot smolvm-libkrunfw (macos-26-arm64)
+    runs-on: macos-26
+    timeout-minutes: 90
+
+    permissions:
+      actions: read
+      checks: read
+      contents: read
+      pull-requests: read
+
+    steps:
+      - name: Set up Homebrew
+        id: set-up-homebrew
+        uses: Homebrew/actions/setup-homebrew@main
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Cache Homebrew Bundler RubyGems
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.set-up-homebrew.outputs.gems-path }}
+          key: macos-26-arm64-libkrunfw-rubygems-${{ steps.set-up-homebrew.outputs.gems-hash }}
+          restore-keys: |
+            macos-26-arm64-libkrunfw-rubygems-
+
+      - name: Verify runner architecture
+        run: |
+          test "$(uname -s)" = "Darwin"
+          test "$(uname -m)" = "arm64"
+          df -h
+
+      - name: Clean up runner
+        run: brew test-bot --only-cleanup-before
+
+      - name: Set up test-bot
+        run: brew test-bot --only-setup
+
+      - name: Check tap syntax
+        run: brew test-bot --only-tap-syntax
+
+      - name: Build and test smolvm-libkrunfw
+        run: brew test-bot --only-formulae --testing-formulae=smolvm-libkrunfw --fail-fast
+
+      - name: Upload bottles
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: libkrunfw-bottles-macos-26-arm64
+          path: "*.bottle.*"
+          if-no-files-found: ignore
+          retention-days: 7

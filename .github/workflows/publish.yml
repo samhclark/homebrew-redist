@@ -9,6 +9,7 @@ on:
         type: choice
         options:
           - smolvm
+          - smolvm-libkrunfw
           - smolvm-virglrenderer
       run_id:
         description: Successful Homebrew workflow run ID containing the bottles
@@ -65,6 +66,9 @@ jobs:
             smolvm)
               formula_paths=(Formula/smolvm.rb Resources/smolvm/Cargo.lock)
               ;;
+            smolvm-libkrunfw)
+              formula_paths=(Formula/smolvm-libkrunfw.rb)
+              ;;
             smolvm-virglrenderer)
               formula_paths=(Formula/smolvm-virglrenderer.rb)
               ;;
@@ -87,7 +91,7 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ inputs.run_id }}
-          pattern: ${{ inputs.formula == 'smolvm' && 'bottles-*' || 'virglrenderer-bottles-*' }}
+          pattern: ${{ inputs.formula == 'smolvm' && 'bottles-*' || inputs.formula == 'smolvm-libkrunfw' && 'libkrunfw-bottles-*' || 'virglrenderer-bottles-*' }}
           merge-multiple: true
           path: bottles
 
@@ -104,6 +108,10 @@ jobs:
             smolvm)
               expected_count=3
               expected_tags=(arm64_linux arm64_tahoe x86_64_linux)
+              ;;
+            smolvm-libkrunfw)
+              expected_count=1
+              expected_tags=(arm64_tahoe)
               ;;
             smolvm-virglrenderer)
               expected_count=2
