@@ -572,6 +572,7 @@ smoke-vulkan-compute-installed:
 	  "$${host_timeout[@]}" "$(SMOLVM_BIN)" machine run \
 	    --gpu --gpu-vram 2048 --net --image "$(VULKAN_COMPUTE_IMAGE)" \
 	    --cpus 2 --mem 4096 --timeout "$(VULKAN_COMPUTE_GUEST_TIMEOUT)" \
+	    -- /usr/local/bin/smolvm-vulkan-compute \
 	    2>&1)"; then \
 	  status=0; \
 	else \

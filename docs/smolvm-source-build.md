@@ -218,8 +218,10 @@ make smoke-vulkan-compute-installed
 ```
 
 The test pulls `ghcr.io/samhclark/smolvm-vulkan-smoke:main`, enables a 2 GiB
-virtio-gpu shared-memory region, and lets the image entrypoint dispatch the
-compute shader. It rejects llvmpipe and any device not named
+virtio-gpu shared-memory region, and explicitly runs the image's
+`/usr/local/bin/smolvm-vulkan-compute` executable. The explicit command is
+required because smolvm v1.0.1 rejects an empty `machine run` command before it
+loads the OCI entrypoint. The probe rejects llvmpipe and any device not named
 `Virtio-GPU Venus`, then verifies the shader's output buffer before returning
 `smolvm-vulkan-compute-smoke-ok`.
 
