@@ -150,8 +150,8 @@ help:
 	  '' \
 	  'Linux builds include GPU support; macOS remains CPU-only.'
 	@printf '%s\n' \
-	  'macOS builds now attempt to build libkrunfw from source instead of' \
-	  'copying the upstream release dylib.'
+	  'The manual macOS path reproduces the source-built smolvm-libkrunfw' \
+	  'dylib used by the published dependency Formula.'
 
 deps:
 	brew bundle --file="$(CURDIR)/Brewfile"

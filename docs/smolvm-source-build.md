@@ -190,10 +190,10 @@ The manual Makefile is primarily a diagnostic and handoff tool. The Formula
 remains the authoritative packaging implementation.
 
 `make formula-check` styles the local Formula, then compares it with the
-Formula in `brew --repo samhclark/redist` before running audit and test. The
-registered tap copy on this machine currently matches and passes. After
-retapping or resetting that checkout, sync the complete tap, including
-`Resources/smolvm/Cargo.lock`, before using the target or rebuilding.
+Formula in `brew --repo samhclark/redist` before running audit and test. If
+the target reports a mismatch, sync the registered tap checkout first. Include
+the complete tap state, especially `Resources/smolvm/Cargo.lock`, before using
+the target or rebuilding.
 
 After installing or upgrading the Formula on a KVM/HVF-capable development
 host, run the end-to-end guest boot smoke test:
@@ -302,8 +302,10 @@ Homebrew's setup action. The workflow runs for pull requests, pushes to `main`,
 and manual dispatches. It checks tap syntax, builds changed Formulae from
 source on pull requests, and always builds smolvm on `main` and manual runs. It
 runs the Formula tests and retains platform-specific bottles as seven-day
-workflow artifacts. On Linux, the Formula test loads libkrun and asserts that
-its GPU feature is enabled.
+workflow artifacts. On push and manual runs, missing smolvm bottle artifacts
+are treated as failures so Homebrew `test-bot` cannot hide a failed Formula
+step. On Linux, the Formula test loads libkrun and asserts that its GPU feature
+is enabled.
 
 The test workflow deliberately has read-only repository permissions.
 
@@ -314,11 +316,14 @@ mistake them for release inputs.
 
 `.github/workflows/publish.yml` is a separate, manually dispatched workflow
 that publishes one Formula's artifacts from a selected successful test run.
-Choose either `smolvm` or `smolvm-virglrenderer` when dispatching it. It:
+Choose `smolvm`, `smolvm-libkrunfw`, or `smolvm-virglrenderer` when
+dispatching it. It:
 
 1. Confirms the run used `tests.yml`, succeeded on `main`, and is an ancestor
    of the current revision.
 2. Refuses to publish if the selected Formula's inputs changed after that run.
+   For `smolvm`, this includes `Formula/smolvm-libkrunfw.rb`, because the
+   macOS bottle depends on that packaged firmware dylib.
 3. Requires exactly the selected Formula's supported bottle tags, all built
    from the selected revision.
 4. Runs Homebrew's `brew pr-upload`, which merges the bottle JSON into the
@@ -332,8 +337,11 @@ Publish within the test artifacts' seven-day retention window:
 gh run list --workflow tests.yml --branch main --status success --limit 5
 gh workflow run publish.yml -f formula=smolvm -f run_id=<run-id>
 gh workflow run publish.yml \
+  -f formula=smolvm-libkrunfw \
+  -f run_id=<run-id>
+gh workflow run publish.yml \
   -f formula=smolvm-virglrenderer \
-  -f run_id=27082234975
+  -f run_id=<run-id>
 gh run watch
 ```
 
@@ -775,35 +783,141 @@ That image should stay Linux amd64-only until real Linux arm64 GPU hardware is
 available. An arm64 Mac does not validate the Linux KVM, virtio-gpu, Venus, and
 Mesa runtime path.
 
-For better reproducibility, the Makefile should eventually default
-`VULKAN_COMPUTE_IMAGE` to a published GHCR digest rather than `:main`. The
-image build itself still consumes mutable Fedora and COPR inputs, but a digest
-pin freezes the produced test artifact for local regression runs.
+The image build itself consumes mutable Fedora and COPR inputs. The roadmap
+below records the known image digest and the validation needed before making
+it the Makefile default.
 
-macOS remains a separate project because it also needs a MoltenVK-capable
-virglrenderer package, install-name/rpath handling, and codesigning tests.
+macOS GPU support remains a separate project because it also needs a
+MoltenVK-capable virglrenderer package, install-name/rpath handling, and
+codesigning tests.
 
 GPU support expands the guest-facing rendering attack surface, so the
 virglrenderer pin will need regular security updates.
 
-## Recommended next steps
+## Project roadmap
 
-1. Push the `smolvm` dependency integration and inspect all three platform
-   builds, especially the poured macOS `smolvm-libkrunfw` dependency.
-2. Publish the `smolvm` revision 3 bottles from that successful run.
-3. On a real Apple Silicon Mac, pour the new `smolvm` bottle and run
-   `make smoke-installed`.
-4. Pin `VULKAN_COMPUTE_IMAGE` to the digest produced by the successful GHCR
-   image workflow, then rerun `make smoke-vulkan-compute-installed`.
-5. Report or patch the smolvm v1.0.1 `machine run` behavior where an empty
-   command is rejected before the OCI image entrypoint is loaded, despite the
-   help text documenting that default.
-6. Extract `smolvm-libkrun` only if the libkrunfw split helps in practice.
-7. Add and test the macOS MoltenVK loader path if macOS GPU support becomes a
-   goal.
-8. Keep the Vulkan smoke image Linux amd64-only unless real Linux arm64 GPU
-   hardware is available for runtime validation.
-9. For any real future smolvm release, follow the documented update checklist.
+### 1. Finish the smolvm revision 3 release
+
+`smolvm-libkrunfw` is now built from source and bottled for macOS arm64. The
+next release step is to publish `smolvm` revision 3, which wires macOS smolvm
+to that packaged firmware dylib.
+
+The first integration commit was
+`b173a6664d0e3a4b586d510b5caf6396b8eb8ae3`. If its Homebrew run is still
+available and successful, it can be used for publishing even after a later
+docs-only commit, because the publish workflow only compares Formula inputs.
+
+Checklist:
+
+1. Confirm the Homebrew run for `b173a66`, or a newer run with the same Formula
+   inputs, passes every job:
+
+   ```sh
+   gh run list --workflow tests.yml --branch main --limit 5
+   gh run view <run-id> --json conclusion,jobs
+   ```
+
+2. Inspect the `macos-26-arm64` smolvm job. It should pour the
+   `smolvm-libkrunfw` dependency bottle, build smolvm revision 3, pass the
+   Formula test, and upload a `bottles-macos-26-arm64` artifact.
+3. Publish the smolvm bottles:
+
+   ```sh
+   gh workflow run publish.yml -f formula=smolvm -f run_id=<successful-run-id>
+   gh run watch
+   ```
+
+   The expected release tag is `smolvm-1.0.1_3`, with `x86_64_linux`,
+   `arm64_linux`, and `arm64_tahoe` bottles.
+4. Sync Homebrew's generated bottle-block commit. If SSH fetch hangs on this
+   Linux host, use the HTTPS remote directly:
+
+   ```sh
+   git fetch --no-tags https://github.com/samhclark/homebrew-redist.git main
+   git merge --ff-only FETCH_HEAD
+   ```
+
+5. On a real Apple Silicon Mac, verify the published bottle:
+
+   ```sh
+   brew update
+   brew reinstall --force-bottle samhclark/redist/smolvm
+   brew test samhclark/redist/smolvm
+   brew linkage --test samhclark/redist/smolvm
+   make smoke-installed
+   ```
+
+   The Formula test should confirm that
+   `$(brew --prefix smolvm)/libexec/lib/libkrunfw.5.dylib` is a symlink into
+   `$(brew --prefix smolvm-libkrunfw)/lib` and that the dylib ID remains
+   `@rpath/libkrunfw.5.dylib`.
+
+### 2. Pin the Vulkan compute smoke image
+
+The current Makefile default pulls
+`ghcr.io/samhclark/smolvm-vulkan-smoke:main`. For reproducible local regression
+runs, switch to a digest from a successful Vulkan smoke image workflow. The
+latest known digest at this checkpoint is:
+
+```text
+ghcr.io/samhclark/smolvm-vulkan-smoke@sha256:efa20f8fa67974fd40bf2855050acf60cc0f31b8d36cfd90a7a4350c1cf605ce
+```
+
+Validate it on the Linux KVM/GPU host before changing the Makefile default:
+
+```sh
+make smoke-vulkan-compute-installed \
+  VULKAN_COMPUTE_IMAGE=ghcr.io/samhclark/smolvm-vulkan-smoke@sha256:efa20f8fa67974fd40bf2855050acf60cc0f31b8d36cfd90a7a4350c1cf605ce
+```
+
+Keep the image Linux amd64-only until real Linux arm64 GPU hardware is
+available for runtime validation. An Apple Silicon Mac does not validate the
+Linux KVM, virtio-gpu, Venus, and Mesa path.
+
+### 3. Decide how much binary bootstrap remains acceptable
+
+After smolvm revision 3, the remaining binary inputs are the release Alpine
+guest rootfs and its statically linked `smolvm-agent`. Rebuilding that rootfs
+inside Homebrew is still a poor fit because upstream's rootfs script performs
+networked Alpine package installation during the build.
+
+Practical next actions:
+
+- Ask upstream to publish a separately checksummed rootfs artifact, or a
+  reproducible source bundle containing all Alpine package inputs.
+- Keep using the release rootfs until such an artifact exists.
+- Consider Cargo vendoring only if offline source builds become a requirement;
+  the current lockfile already gives deterministic Rust dependency resolution.
+
+### 4. Fix or report the smolvm entrypoint behavior
+
+`smolvm machine run` in v1.0.1 rejects an empty command before loading the OCI
+image entrypoint, although the help text documents entrypoint-style usage. The
+Makefile works around this by passing an explicit command for the Vulkan
+compute image.
+
+Either report this upstream or patch it locally when updating smolvm. The
+desired behavior is that an image with an entrypoint can run without an
+explicit `-- <command>` override.
+
+### 5. Defer optional package splits and macOS GPU work
+
+Do not split out `smolvm-libkrun` unless it solves a concrete maintenance
+problem. It would shorten the main Formula, but it also packages
+smolvm-specific `init.krun`, exposes feature choices as package API, and adds
+coordination between libkrun and libkrunfw updates.
+
+macOS GPU/Vulkan support should remain optional. Making it useful would require
+a MoltenVK-capable virglrenderer formula, loader or link-time patches for
+libkrun, install-name/rpath handling, codesigning validation, and runtime tests
+on an Apple Silicon Mac. That is separate from the headless VM path.
+
+### 6. Use the release checklist for future upstream versions
+
+There is no known release newer than smolvm v1.0.1 at this checkpoint. For any
+future release, start from the `Updating smolvm` checklist above after upstream
+publishes a real tag and matching runtime archives. Do not assume a version
+number or copy submodule revisions from a different tag.
 
 ## Reference sources
 

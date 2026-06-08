@@ -22,6 +22,6 @@ brew install samhclark/redist/<formula>
 
 ## Development
 
-The current smolvm source-build status, reproduction steps, remaining binary
-inputs, and GPU packaging notes are in
+The current smolvm source-build status, reproduction steps, project roadmap,
+remaining binary inputs, and GPU packaging notes are in
 [docs/smolvm-source-build.md](docs/smolvm-source-build.md).
