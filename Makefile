@@ -74,6 +74,13 @@ RUNTIME_PLATFORM := darwin-arm64
 RUNTIME_SHA256 := d6a2830cfa7087a935590b0fed859c59bda83410e510a75c0ae5add8c9d21700
 LIBKRUN_NAME := libkrun.dylib
 LIBKRUN_FEATURES := blk,net
+MACOS_CROSS_PATH := $(shell brew --prefix aarch64-elf-gcc)/bin:$(shell brew --prefix aarch64-elf-binutils)/bin:$(shell brew --prefix bison)/bin:$(shell brew --prefix flex)/bin
+MACOS_GMAKE := $(shell brew --prefix make)/bin/gmake
+MACOS_GPATCH := $(shell brew --prefix gpatch)/bin/gpatch
+MACOS_LIBELF_INCLUDE := $(shell brew --prefix libelf)/include
+MACOS_PYTHON := $(shell brew --prefix python@3.14)/bin/python3.14
+MACOS_KERNEL_SRC := $(LIBKRUNFW_SRC)/linux-$(KERNEL_VERSION)
+MACOS_HOST_INCLUDE := $(LIBKRUNFW_SRC)/host-include
 else ifeq ($(HOST_OS),Linux)
 ifeq ($(GUEST_ARCH),aarch64)
 RUNTIME_PLATFORM := linux-arm64
@@ -110,10 +117,8 @@ KERNEL_CC ?= $(shell command -v gcc || command -v clang)
 MKFS_EXT4 = $(shell brew --prefix e2fsprogs)/sbin/mkfs.ext4
 GPU_FEATURE_CHECK = python3 -c 'import ctypes, sys; lib = ctypes.CDLL(sys.argv[1]); lib.krun_has_feature.argtypes = [ctypes.c_uint64]; lib.krun_has_feature.restype = ctypes.c_int; assert lib.krun_has_feature(2) == 1, "libkrun GPU feature is disabled"'
 
-FETCH_ARCHIVES := $(SMOLVM_ARCHIVE) $(LIBKRUN_ARCHIVE) $(RUNTIME_ARCHIVE)
-ifeq ($(HOST_OS),Linux)
-FETCH_ARCHIVES += $(LIBKRUNFW_ARCHIVE) $(KERNEL_ARCHIVE) $(PYELFTOOLS_ARCHIVE)
-endif
+FETCH_ARCHIVES := $(SMOLVM_ARCHIVE) $(LIBKRUN_ARCHIVE) $(LIBKRUNFW_ARCHIVE)
+FETCH_ARCHIVES += $(KERNEL_ARCHIVE) $(PYELFTOOLS_ARCHIVE) $(RUNTIME_ARCHIVE)
 
 .PHONY: help deps fetch verify prepare build build-init build-libkrun
 .PHONY: build-libkrunfw build-smolvm stage check formula-check
@@ -140,6 +145,9 @@ help:
 	  '  make clean         Remove generated .build state' \
 	  '' \
 	  'Linux builds include GPU support; macOS remains CPU-only.'
+	@printf '%s\n' \
+	  'macOS builds now attempt to build libkrunfw from source instead of' \
+	  'copying the upstream release dylib.'
 
 deps:
 	brew bundle --file="$(CURDIR)/Brewfile"
@@ -195,26 +203,24 @@ verify: fetch
 	}; \
 	check "$(SMOLVM_SHA256)" "$(SMOLVM_ARCHIVE)"; \
 	check "$(LIBKRUN_SHA256)" "$(LIBKRUN_ARCHIVE)"; \
-	if [[ "$(HOST_OS)" == "Linux" ]]; then \
-	  check "$(LIBKRUNFW_SHA256)" "$(LIBKRUNFW_ARCHIVE)"; \
-	  check "$(KERNEL_SHA256)" "$(KERNEL_ARCHIVE)"; \
-	  check "$(PYELFTOOLS_SHA256)" "$(PYELFTOOLS_ARCHIVE)"; \
-	fi; \
+	check "$(LIBKRUNFW_SHA256)" "$(LIBKRUNFW_ARCHIVE)"; \
+	check "$(KERNEL_SHA256)" "$(KERNEL_ARCHIVE)"; \
+	check "$(PYELFTOOLS_SHA256)" "$(PYELFTOOLS_ARCHIVE)"; \
 	check "$(RUNTIME_SHA256)" "$(RUNTIME_ARCHIVE)"
 
 prepare: $(PREPARED)
 
 $(PREPARED): verify Resources/smolvm/Cargo.lock
 	mkdir -p "$(SOURCE_DIR)" "$(TARGET_DIR)" "$(STAGE_DIR)/lib" "$(CARGO_HOME)"
-	mkdir -p "$(SMOLVM_SRC)" "$(LIBKRUN_SRC)" "$(RUNTIME_SRC)"
+	mkdir -p "$(SMOLVM_SRC)" "$(LIBKRUN_SRC)" "$(LIBKRUNFW_SRC)"
+	mkdir -p "$(PYELFTOOLS_SRC)" "$(RUNTIME_SRC)"
 	tar -xf "$(SMOLVM_ARCHIVE)" -C "$(SMOLVM_SRC)" --strip-components=1
 	tar -xf "$(LIBKRUN_ARCHIVE)" -C "$(LIBKRUN_SRC)" --strip-components=1
+	tar -xf "$(LIBKRUNFW_ARCHIVE)" -C "$(LIBKRUNFW_SRC)" --strip-components=1
+	tar -xf "$(PYELFTOOLS_ARCHIVE)" -C "$(PYELFTOOLS_SRC)" --strip-components=1
 	tar -xf "$(RUNTIME_ARCHIVE)" -C "$(RUNTIME_SRC)" --strip-components=1
 	cp Resources/smolvm/Cargo.lock "$(SMOLVM_SRC)/Cargo.lock"
 ifeq ($(HOST_OS),Linux)
-	mkdir -p "$(LIBKRUNFW_SRC)" "$(PYELFTOOLS_SRC)"
-	tar -xf "$(LIBKRUNFW_ARCHIVE)" -C "$(LIBKRUNFW_SRC)" --strip-components=1
-	tar -xf "$(PYELFTOOLS_ARCHIVE)" -C "$(PYELFTOOLS_SRC)" --strip-components=1
 	mkdir -p "$(LIBKRUNFW_SRC)/tarballs"
 	cp "$(KERNEL_ARCHIVE)" "$(LIBKRUNFW_SRC)/tarballs/linux-$(KERNEL_VERSION).tar.xz"
 ifeq ($(GUEST_ARCH),x86_64)
@@ -289,10 +295,49 @@ ifeq ($(HOST_OS),Linux)
 	ln -sfn "libkrunfw.so.$(LIBKRUNFW_VERSION)" "$(STAGE_DIR)/lib/libkrunfw.so.5"
 	ln -sfn "libkrunfw.so.5" "$(STAGE_DIR)/lib/libkrunfw.so"
 else
-	cp "$(RUNTIME_SRC)/lib/libkrunfw.5.dylib" "$(STAGE_DIR)/lib/"
-	install_name_tool -id "@rpath/libkrunfw.5.dylib" "$(STAGE_DIR)/lib/libkrunfw.5.dylib"
-	codesign --force --sign - "$(STAGE_DIR)/lib/libkrunfw.5.dylib"
-	ln -sfn "libkrunfw.5.dylib" "$(STAGE_DIR)/lib/libkrunfw.dylib"
+		rm -rf "$(MACOS_KERNEL_SRC)" "$(MACOS_HOST_INCLUDE)"
+		tar -xf "$(KERNEL_ARCHIVE)" -C "$(LIBKRUNFW_SRC)"
+		for patch in "$(LIBKRUNFW_SRC)"/patches/0*.patch; do \
+		  "$(MACOS_GPATCH)" -s -p1 -d "$(MACOS_KERNEL_SRC)" < "$$patch"; \
+		done
+		cp "$(LIBKRUNFW_SRC)/config-libkrunfw_aarch64" "$(MACOS_KERNEL_SRC)/.config"
+		perl -0pi -e 's/typedef struct \{\n\t__u8 b\[16\];\n\} uuid_t;/#ifndef __APPLE__\ntypedef struct {\n\t__u8 b[16];\n} uuid_t;\n#endif/' \
+		  "$(MACOS_KERNEL_SRC)/scripts/mod/file2alias.c"
+		perl -pi -e 's/uuid->b\[/(*uuid)[/g' \
+		  "$(MACOS_KERNEL_SRC)/scripts/mod/file2alias.c"
+		mkdir -p "$(MACOS_HOST_INCLUDE)"
+		printf '%s\n' \
+		  '#pragma once' \
+		  '#define bswap_16(x) __builtin_bswap16(x)' \
+		  '#define bswap_32(x) __builtin_bswap32(x)' \
+		  '#define bswap_64(x) __builtin_bswap64(x)' \
+		  > "$(MACOS_HOST_INCLUDE)/byteswap.h"
+		printf '%s\n' \
+		  '#pragma once' \
+		  '#include <libelf/libelf.h>' \
+		  > "$(MACOS_HOST_INCLUDE)/elf.h"
+		env PATH="$(MACOS_CROSS_PATH):$$PATH" \
+		  "$(MACOS_GMAKE)" -C "$(MACOS_KERNEL_SRC)" -j"$(JOBS)" \
+		    ARCH=arm64 CROSS_COMPILE=aarch64-elf- \
+		    HOSTCC="$(KERNEL_CC)" \
+		    HOSTCFLAGS="-I$(MACOS_HOST_INCLUDE) -I$(MACOS_LIBELF_INCLUDE)" \
+		    KBUILD_BUILD_TIMESTAMP='Fri May  8 14:25:15 CEST 2026' \
+		    KBUILD_BUILD_USER=root KBUILD_BUILD_HOST=libkrunfw olddefconfig
+		env PATH="$(MACOS_CROSS_PATH):$$PATH" \
+		  "$(MACOS_GMAKE)" -C "$(MACOS_KERNEL_SRC)" -j"$(JOBS)" \
+		    ARCH=arm64 CROSS_COMPILE=aarch64-elf- \
+		    HOSTCC="$(KERNEL_CC)" \
+		    HOSTCFLAGS="-I$(MACOS_HOST_INCLUDE) -I$(MACOS_LIBELF_INCLUDE)" \
+		    KBUILD_BUILD_TIMESTAMP='Fri May  8 14:25:15 CEST 2026' \
+		    KBUILD_BUILD_USER=root KBUILD_BUILD_HOST=libkrunfw Image
+		cd "$(LIBKRUNFW_SRC)" && env PYTHONPATH="$(PYELFTOOLS_SRC)" \
+		  "$(MACOS_PYTHON)" bin2cbundle.py --os Darwin -t Image \
+		    "$(MACOS_KERNEL_SRC)/arch/arm64/boot/Image" kernel.c
+		"$(KERNEL_CC)" -dynamiclib -fPIC -O2 -DABI_VERSION=5 \
+		  -Wl,-install_name,@rpath/libkrunfw.5.dylib \
+		  -o "$(STAGE_DIR)/lib/libkrunfw.5.dylib" "$(LIBKRUNFW_SRC)/kernel.c"
+		codesign --force --sign - "$(STAGE_DIR)/lib/libkrunfw.5.dylib"
+		ln -sfn "libkrunfw.5.dylib" "$(STAGE_DIR)/lib/libkrunfw.dylib"
 endif
 	touch "$@"
 
@@ -334,7 +379,8 @@ $(BUILD_COMPLETE): $(SMOLVM_OUTPUT)
 check: $(BUILD_COMPLETE)
 	"$(STAGE_DIR)/smolvm" --version
 	file "$(STAGE_DIR)/smolvm-bin" "$(STAGE_DIR)/init.krun" \
-	  "$(STAGE_DIR)/lib/$(LIBKRUN_NAME)"
+	  "$(STAGE_DIR)/lib/$(LIBKRUN_NAME)" \
+	  "$(STAGE_DIR)/lib/libkrunfw.$(if $(filter Darwin,$(HOST_OS)),5.dylib,so.5)"
 	tar -tf "$(STAGE_DIR)/agent-rootfs.tar" | grep -Fx './init.krun'
 	ls -l "$(STAGE_DIR)/lib"
 	du -h "$(STAGE_DIR)/storage-template.ext4" "$(STAGE_DIR)/overlay-template.ext4"

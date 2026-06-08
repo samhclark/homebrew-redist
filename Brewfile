@@ -9,6 +9,20 @@ brew "pkgconf"
 brew "rust"
 brew "zig"
 
+if OS.mac?
+  brew "aarch64-elf-binutils"
+  brew "aarch64-elf-gcc"
+  brew "bc"
+  brew "bison"
+  brew "cpio"
+  brew "flex"
+  brew "gpatch"
+  brew "libelf"
+  brew "make"
+  brew "python@3.14", link: false
+  brew "xz"
+end
+
 if OS.linux?
   brew "bc"
   brew "bison"
