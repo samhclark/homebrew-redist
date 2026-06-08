@@ -107,7 +107,7 @@ class SmolvmLibkrunfw < Formula
   def apply_kernel_patches(linux_kernel)
     patch = Formula["gpatch"].opt_bin/"gpatch"
     Dir["patches/0*.patch"].each do |kernel_patch|
-      system patch, "-p1", "-d", linux_kernel, "-i", kernel_patch
+      system patch, "-p1", "-d", linux_kernel, "-i", buildpath/kernel_patch
     end
   end
 

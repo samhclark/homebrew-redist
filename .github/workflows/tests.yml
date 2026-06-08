@@ -207,5 +207,5 @@ jobs:
         with:
           name: libkrunfw-bottles-macos-26-arm64
           path: "*.bottle.*"
-          if-no-files-found: ignore
+          if-no-files-found: error
           retention-days: 7
