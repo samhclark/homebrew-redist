@@ -1,6 +1,6 @@
 # smolvm source-build handoff
 
-Last updated: June 7, 2026.
+Last updated: June 8, 2026.
 
 ## Current state
 
@@ -660,15 +660,27 @@ libkrun with partial RELRO, removing its hard virglrenderer `NEEDED` entry with
 the dedicated virglrenderer dependency is mandatory, and libkrun keeps its
 normal dynamic dependency.
 
-The local Fedora test proves the Vulkan loader, Mesa Venus ICD, virtio-gpu
-transport, and physical-device enumeration. It does not execute a shader,
-compute kernel, or rendered frame. A future stronger workload should execute
-GPU work and validate its result.
+The local Fedora `vulkaninfo` smoke proves the Vulkan loader, Mesa Venus ICD,
+virtio-gpu transport, and physical-device enumeration. It still uses mutable
+`fedora:42` and COPR package inputs at guest runtime, so it remains a useful
+diagnostic rather than a repeatable regression test.
 
-The current Vulkan smoke is also not reproducible enough for packaging CI:
-`fedora:42` and the COPR package set are mutable network inputs. A pinned OCI
-digest plus a checksummed guest workload or prebuilt test image would make this
-appropriate for repeatable regression testing.
+The stronger Vulkan compute smoke is now implemented for Linux x86_64. The
+`vulkan-smoke-image.yml` workflow builds a Fedora-based OCI image with Buildah
+and publishes it to GHCR. The image contains a compiled Vulkan probe and a
+validated SPIR-V compute shader. `make smoke-vulkan-compute-installed` pulls
+that image through smolvm, runs the probe explicitly, rejects llvmpipe, selects
+the `Virtio-GPU Venus` device, dispatches the shader, reads back 256 integers,
+and verifies every result.
+
+That image should stay Linux amd64-only until real Linux arm64 GPU hardware is
+available. An arm64 Mac does not validate the Linux KVM, virtio-gpu, Venus, and
+Mesa runtime path.
+
+For better reproducibility, the Makefile should eventually default
+`VULKAN_COMPUTE_IMAGE` to a published GHCR digest rather than `:main`. The
+image build itself still consumes mutable Fedora and COPR inputs, but a digest
+pin freezes the produced test artifact for local regression runs.
 
 macOS remains a separate project because it also needs a MoltenVK-capable
 virglrenderer package, install-name/rpath handling, and codesigning tests.
@@ -678,14 +690,19 @@ virglrenderer pin will need regular security updates.
 
 ## Recommended next steps
 
-1. Replace the mutable Fedora/COPR Vulkan setup with a pinned OCI image or
-   checksummed guest test artifact.
-2. Add a small Vulkan compute or rendering workload that validates GPU output,
-   not only device enumeration.
-3. Add and test the macOS MoltenVK loader path.
-4. Reconsider separate `smolvm-libkrunfw` and `smolvm-libkrun` Formulae now
-   that the Linux GPU dependency graph is proven.
-5. For any real future smolvm release, follow the documented update checklist.
+1. Pin `VULKAN_COMPUTE_IMAGE` to the digest produced by the successful GHCR
+   image workflow, then rerun `make smoke-vulkan-compute-installed`.
+2. Report or patch the smolvm v1.0.1 `machine run` behavior where an empty
+   command is rejected before the OCI image entrypoint is loaded, despite the
+   help text documenting that default.
+3. Reconsider a separate `smolvm-libkrunfw` Formula now that the Linux GPU
+   dependency graph and bottles are proven. Extract `smolvm-libkrun` only if
+   the libkrunfw split helps in practice.
+4. Add and test the macOS MoltenVK loader path if macOS GPU support becomes a
+   goal.
+5. Keep the Vulkan smoke image Linux amd64-only unless real Linux arm64 GPU
+   hardware is available for runtime validation.
+6. For any real future smolvm release, follow the documented update checklist.
 
 ## Reference sources
 
