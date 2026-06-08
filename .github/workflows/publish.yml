@@ -64,7 +64,11 @@ jobs:
 
           case "$FORMULA" in
             smolvm)
-              formula_paths=(Formula/smolvm.rb Resources/smolvm/Cargo.lock)
+              formula_paths=(
+                Formula/smolvm.rb
+                Formula/smolvm-libkrunfw.rb
+                Resources/smolvm/Cargo.lock
+              )
               ;;
             smolvm-libkrunfw)
               formula_paths=(Formula/smolvm-libkrunfw.rb)

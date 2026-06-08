@@ -25,15 +25,15 @@ archive to building the host-side software from pinned source:
 - The Linux keg stages version-stable symlinks for libepoxy, libbz2,
   libvirglrenderer, and `virgl_render_server` beside libkrun, matching the
   lookup paths in smolvm v1.0.1.
-- On macOS arm64, the current `smolvm` Formula still sources
-  `libkrunfw.5.dylib` from the release archive.
-- A new macOS-only `smolvm-libkrunfw` Formula now attempts the missing source
-  build by cross-building the arm64 Linux guest kernel and compiling the
-  generated bundle into a Mach-O dylib. It is not wired into `smolvm` yet.
+- On macOS arm64, `smolvm` depends on the tap's `smolvm-libkrunfw` Formula and
+  links its version-stable `opt_lib/libkrunfw.5.dylib` into the runtime bundle.
+- The macOS-only `smolvm-libkrunfw` Formula cross-builds the arm64 Linux guest
+  kernel and compiles the generated bundle into a Mach-O dylib. Its macOS 26
+  arm64 bottle is published separately and reused across `smolvm` rebuilds.
 - The Makefile's macOS path has been updated to use the same source build
   instead of copying the upstream release dylib.
-- Any release dylib or locally built dylib is normalized to
-  `@rpath/libkrunfw.5.dylib` and ad-hoc signed before installation.
+- The source-built dylib uses `@rpath/libkrunfw.5.dylib`, is ad-hoc signed,
+  and preserves that install name through bottle relocation.
 
 The generated Cargo lockfile is committed at
 `Resources/smolvm/Cargo.lock`. Upstream v1.0.1 does not include one.
@@ -104,10 +104,10 @@ Formula test, strict linkage test, bare-guest smoke, GPU-device smoke, and
 Vulkan smoke. The separately packaged `smolvm-virglrenderer` 1.3.0 bottles are
 published for Linux x86_64 and arm64.
 
-## macOS libkrunfw source-build experiment
+## macOS libkrunfw source build
 
-The current in-progress work adds `Formula/smolvm-libkrunfw.rb`. The formula is
-macOS arm64 only and builds the smol-machines libkrunfw fork from commit
+`Formula/smolvm-libkrunfw.rb` is macOS arm64 only and builds the smol-machines
+libkrunfw fork from commit
 `516ceece6aed60ccc84ac8faa459885062e39400` with Linux 6.12.87.
 
 The intended build is:
@@ -153,12 +153,11 @@ rewrote the dylib ID to an absolute `opt` path. The Formula now declares
 `preserve_rpath`, matching the existing `smolvm` Formula and the bottle
 relocation design below.
 
-What remains unknown until GitHub Actions reruns on `macos-26` is whether the
-preserved `@rpath` ID passes the Formula test after the bottle is poured.
-
-If this formula passes CI, publish its macOS bottle first, then wire `smolvm`
-to depend on `smolvm-libkrunfw` on macOS and replace the copied release dylib
-with a symlink into the dependency's `opt_lib`.
+The following `macos-26` run passed the Formula test with the preserved
+`@rpath` ID, and the bottle was published at
+<https://github.com/samhclark/homebrew-redist/releases/tag/smolvm-libkrunfw-5.4.0>.
+The main `smolvm` Formula now depends on it and links the dependency's
+version-stable `opt_lib` dylib into `libexec/lib`.
 
 ## Reproducing after a reboot
 
@@ -641,8 +640,6 @@ provides:
 
 - The Alpine guest rootfs.
 - Its statically linked `smolvm-agent`.
-- On macOS, libkrunfw and its embedded Linux kernel until the new
-  `smolvm-libkrunfw` Formula passes CI and `smolvm` is wired to depend on it.
 
 Rebuilding the rootfs invokes Alpine package downloads and image tooling from
 `scripts/build-agent-rootfs.sh`. That is a poor fit for Homebrew's deterministic
@@ -655,17 +652,16 @@ network access to crates.io unless Homebrew's cache is already populated.
 
 ## Should libkrun and libkrunfw become separate Formulae?
 
-### libkrunfw: probably yes
+### libkrunfw: yes
 
 A tap-specific `smolvm-libkrunfw` Formula provides the clearest benefit and is
-now being tried first on macOS arm64:
+now published for macOS arm64:
 
 - It isolates the slow full-kernel build.
 - It can be bottled and reused across smolvm rebuilds.
 - Its ABI and SONAME already form a natural package boundary.
 - Linux and macOS policy can be handled independently. Linux currently builds
-  libkrunfw inside `smolvm`; macOS gets a dedicated formula while its
-  cross-kernel build is still being proven.
+  libkrunfw inside `smolvm`; macOS uses the dedicated bottled formula.
 
 It should be named for smolvm rather than simply `libkrunfw`. smolvm pins a
 patched fork and kernel configuration, so presenting it as a generic upstream
@@ -686,11 +682,10 @@ The costs are real:
 - Homebrew dependency versioning is not a substitute for testing that exact
   pair.
 
-Recommendation: first prove and bottle `smolvm-libkrunfw` on macOS, then wire
-`smolvm` to it. Extract `smolvm-libkrun` only if build time, GPU work, or
-another consumer justifies the extra release coordination. Do not depend on
-the generic `slp/krun/libkrun` Formula without verifying the smol-machines fork
-patches; the current Formula intentionally uses a different commit.
+Extract `smolvm-libkrun` only if build time, GPU work, or another consumer
+justifies the extra release coordination. Do not depend on the generic
+`slp/krun/libkrun` Formula without verifying the smol-machines fork patches;
+the current Formula intentionally uses a different commit.
 
 If split, the main Formula should load the libraries from dependency `opt_lib`
 paths rather than copying them into its own Cellar. The current loader
@@ -793,11 +788,11 @@ virglrenderer pin will need regular security updates.
 
 ## Recommended next steps
 
-1. Push the musl `elf.h` fix and inspect the `smolvm-libkrunfw` `macos-26`
-   job.
-2. If it passes, publish the `smolvm-libkrunfw` bottle.
-3. Wire `smolvm` to depend on `smolvm-libkrunfw` on macOS, bump the `smolvm`
-   revision, and remove the release-dylib extraction from its macOS branch.
+1. Push the `smolvm` dependency integration and inspect all three platform
+   builds, especially the poured macOS `smolvm-libkrunfw` dependency.
+2. Publish the `smolvm` revision 3 bottles from that successful run.
+3. On a real Apple Silicon Mac, pour the new `smolvm` bottle and run
+   `make smoke-installed`.
 4. Pin `VULKAN_COMPUTE_IMAGE` to the digest produced by the successful GHCR
    image workflow, then rerun `make smoke-vulkan-compute-installed`.
 5. Report or patch the smolvm v1.0.1 `machine run` behavior where an empty

@@ -4,7 +4,7 @@ class Smolvm < Formula
   url "https://github.com/smol-machines/smolvm/archive/refs/tags/v1.0.1.tar.gz"
   sha256 "2192f54c53a8621ecd038a1bbdee1cc917e111abe3d935e81bdaee51daccc862"
   license all_of: ["Apache-2.0", "LGPL-2.1-only", "GPL-2.0-only"]
-  revision 2
+  revision 3
 
   bottle do
     root_url "https://github.com/samhclark/homebrew-redist/releases/download/smolvm-1.0.1_2"
@@ -21,6 +21,7 @@ class Smolvm < Formula
 
   on_macos do
     depends_on arch: :arm64
+    depends_on "smolvm-libkrunfw"
   end
 
   on_linux do
@@ -109,10 +110,7 @@ class Smolvm < Formula
       install_linux_gpu_runtime(libdir)
       build_libkrunfw(libdir)
     else
-      libkrunfw = resource_root/"runtime/lib/libkrunfw.5.dylib"
-      MachO::Tools.change_dylib_id(libkrunfw, "@rpath/libkrunfw.5.dylib")
-      MachO.codesign!(libkrunfw)
-      libdir.install libkrunfw
+      libdir.install_symlink Formula["smolvm-libkrunfw"].opt_lib/"libkrunfw.5.dylib"
       libdir.install_symlink "libkrunfw.5.dylib" => "libkrunfw.dylib"
       ENV["LIBKRUN_BUNDLE"] = libdir
     end
@@ -164,8 +162,8 @@ class Smolvm < Formula
       EOS
     else
       <<~EOS
-        libkrunfw is taken from the matching upstream release because its Linux
-        guest kernel cannot be built natively on macOS.
+        libkrunfw and its Linux guest kernel are provided by the tap's
+        smolvm-libkrunfw package, which is built from source on macOS arm64.
       EOS
     end
 
@@ -199,6 +197,8 @@ class Smolvm < Formula
       assert_equal 1, has_feature.call(2)
     else
       libkrunfw = libexec/"lib/libkrunfw.5.dylib"
+      assert_predicate libkrunfw, :symlink?
+      assert_equal Formula["smolvm-libkrunfw"].opt_lib/"libkrunfw.5.dylib", libkrunfw.resolved_path
       assert_equal "@rpath/libkrunfw.5.dylib", MachO.open(libkrunfw).dylib_id
       system "codesign", "--verify", libkrunfw
     end

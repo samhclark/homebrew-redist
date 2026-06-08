@@ -86,7 +86,7 @@ jobs:
         with:
           name: bottles-${{ matrix.platform }}
           path: "*.bottle.*"
-          if-no-files-found: ignore
+          if-no-files-found: ${{ github.event_name == 'pull_request' && 'ignore' || 'error' }}
           retention-days: 7
 
   test-virglrenderer:
