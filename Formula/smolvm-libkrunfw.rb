@@ -6,6 +6,12 @@ class SmolvmLibkrunfw < Formula
   sha256 "c9c43a5d54a239f2bb69f1c6762ad40854a8f5c996a9890872bd3ca39d52ba5d"
   license all_of: ["LGPL-2.1-only", "GPL-2.0-only"]
 
+  bottle do
+    root_url "https://github.com/samhclark/homebrew-redist/releases/download/smolvm-libkrunfw-5.4.0"
+    rebuild 1
+    sha256 cellar: :any_skip_relocation, arm64_tahoe: "4f0923b2252fe457a3808cd60a026c4ef5f1debf164a0f614ec4d0c488267c00"
+  end
+
   depends_on "aarch64-elf-binutils" => :build
   depends_on "aarch64-elf-gcc" => :build
   depends_on "bc" => :build
