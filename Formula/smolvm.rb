@@ -188,8 +188,8 @@ class Smolvm < Formula
     else
       libkrunfw = libexec/"lib/libkrunfw.5.dylib"
       assert_predicate libkrunfw, :symlink?
-      assert_equal (Formula["smolvm-libkrunfw"].opt_lib/"libkrunfw.5.dylib").resolved_path,
-                 libkrunfw.resolved_path
+      assert_equal (Formula["smolvm-libkrunfw"].opt_lib/"libkrunfw.5.dylib").realpath,
+                 libkrunfw.realpath
       assert_equal "@rpath/libkrunfw.5.dylib", MachO.open(libkrunfw).dylib_id
       system "codesign", "--verify", libkrunfw
     end
