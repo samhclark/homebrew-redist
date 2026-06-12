@@ -1,18 +1,9 @@
 class Smolvm < Formula
   desc "OCI-native microVM runtime for hardware-isolated local execution"
   homepage "https://github.com/smol-machines/smolvm"
-  url "https://github.com/smol-machines/smolvm/archive/refs/tags/v1.0.1.tar.gz"
-  sha256 "2192f54c53a8621ecd038a1bbdee1cc917e111abe3d935e81bdaee51daccc862"
+  url "https://github.com/smol-machines/smolvm/archive/refs/tags/v1.0.3.tar.gz"
+  sha256 "65aa38bec3f44a079599f67c3229722ed6d3cd99224c1ae0af6c7e4b4fa31d5d"
   license all_of: ["Apache-2.0", "LGPL-2.1-only", "GPL-2.0-only"]
-  revision 3
-
-  bottle do
-    root_url "https://github.com/samhclark/homebrew-redist/releases/download/smolvm-1.0.1_2"
-    rebuild 3
-    sha256               arm64_tahoe:  "2e3e715a62202c4c4edf7886102a693f6679f4ded5d94cfb78b44ef2b2f4e8d3"
-    sha256 cellar: :any, arm64_linux:  "ba6a423f24d70c60757e6df229a46ec04b2e243f96fdb6ad50664f9b36aea7fc"
-    sha256 cellar: :any, x86_64_linux: "47d467f54d21d34ef3a032f0c02a41c7c5e4517201d31a89a27dc9e50a4d1979"
-  end
 
   depends_on "e2fsprogs" => :build
   depends_on "pkgconf" => :build
@@ -60,23 +51,23 @@ class Smolvm < Formula
   preserve_rpath
 
   resource "libkrun" do
-    url "https://github.com/smol-machines/libkrun/archive/e85a254ac1a1a2be58fb5b54e10937fecc55d268.tar.gz"
-    sha256 "627bddfe16be6b144a7582fea79fb2d87175df9927d3dfeffbcd4ce7d6d5b6b3"
+    url "https://github.com/smol-machines/libkrun/archive/98163265197caa24a789699f16a68b98e917b65b.tar.gz"
+    sha256 "c30f78d7527804d30f4eb5df3abdeff90e8ca5558c1055cdd2947833d4a6ec9d"
   end
 
   resource "runtime" do
     on_macos do
-      url "https://github.com/smol-machines/smolvm/releases/download/v1.0.1/smolvm-1.0.1-darwin-arm64.tar.gz"
-      sha256 "d6a2830cfa7087a935590b0fed859c59bda83410e510a75c0ae5add8c9d21700"
+      url "https://github.com/smol-machines/smolvm/releases/download/v1.0.3/smolvm-1.0.3-darwin-arm64.tar.gz"
+      sha256 "98c3da4970c048ff27c6454b263c197c23cd835f380cb72490d47ca389167553"
     end
     on_linux do
       on_arm do
-        url "https://github.com/smol-machines/smolvm/releases/download/v1.0.1/smolvm-1.0.1-linux-arm64.tar.gz"
-        sha256 "c8c6cf8dbc4427ca28c356fe8c27e49749f6691fbda058daf09b2643cd688399"
+        url "https://github.com/smol-machines/smolvm/releases/download/v1.0.3/smolvm-1.0.3-linux-arm64.tar.gz"
+        sha256 "5dc3d9c99a0e1f8b9b5f3861f74181283738928b1ee149c71cb0ce0f9118d25b"
       end
       on_intel do
-        url "https://github.com/smol-machines/smolvm/releases/download/v1.0.1/smolvm-1.0.1-linux-x86_64.tar.gz"
-        sha256 "a4c85e8b3e14e0df7976eb00a9dbdb55e2d90d7f2a0e8c237e8518030496d34a"
+        url "https://github.com/smol-machines/smolvm/releases/download/v1.0.3/smolvm-1.0.3-linux-x86_64.tar.gz"
+        sha256 "8f2ce96b3c7b288261c83da0210ee1665a18c2b4f8b67772f7943016eb59b6c2"
       end
     end
   end
@@ -86,8 +77,7 @@ class Smolvm < Formula
     resource("libkrun").stage resource_root/"libkrun"
     resource("runtime").stage resource_root/"runtime"
 
-    # Upstream does not commit a lockfile, so keep the generated v1.0.1 lockfile
-    # in the tap and require Cargo to honor it.
+    # Keep the upstream Cargo.lock in the tap so Cargo is pinned to exact deps.
     cp Pathname(__dir__).parent/"Resources/smolvm/Cargo.lock", "Cargo.lock"
 
     # The release layout puts init.krun next to smolvm-bin. Include that location
