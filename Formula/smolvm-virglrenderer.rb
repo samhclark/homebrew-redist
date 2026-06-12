@@ -7,9 +7,9 @@ class SmolvmVirglrenderer < Formula
 
   bottle do
     root_url "https://github.com/samhclark/homebrew-redist/releases/download/smolvm-virglrenderer-1.3.0"
-    rebuild 1
-    sha256 arm64_linux:  "914d6d3c603cd9e43307e6e3a83a916ed17e081c5eb00e2ec103e6a1cf415879"
-    sha256 x86_64_linux: "e46f3627fbbebb56c83744057ac0a19e334f951e4e2376c80f5cf0ebcadea178"
+    rebuild 2
+    sha256 arm64_linux:  "d8a10d7e8a70b902db0846aa2945e261d3fea0cf76365c3eecabeedb54c1fc59"
+    sha256 x86_64_linux: "0f634c4f6db21bd53c171eb378c6668a2a083f56df138fb0fc5aabe0f3c9e078"
   end
 
   depends_on "libyaml" => :build
