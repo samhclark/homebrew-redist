@@ -8,8 +8,8 @@ class SmolvmLibkrunfw < Formula
 
   bottle do
     root_url "https://github.com/samhclark/homebrew-redist/releases/download/smolvm-libkrunfw-5.4.0"
-    rebuild 1
-    sha256 cellar: :any_skip_relocation, arm64_tahoe: "4f0923b2252fe457a3808cd60a026c4ef5f1debf164a0f614ec4d0c488267c00"
+    rebuild 2
+    sha256 cellar: :any_skip_relocation, arm64_tahoe: "f71f0cba290e099876c8255d104e0224bc2419c0be983aef0b9dbb5c7efec511"
   end
 
   depends_on "aarch64-elf-binutils" => :build
