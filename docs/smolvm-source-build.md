@@ -1,13 +1,13 @@
 # smolvm source-build handoff
 
-Last updated: June 8, 2026.
+Last updated: June 21, 2026.
 
 ## Current state
 
 The `smolvm` Formula has been reworked from installing an upstream binary
 archive to building the host-side software from pinned source:
 
-- smolvm v1.0.1 is built from its tag archive.
+- smolvm v1.1.2 is built from its tag archive.
 - The smol-machines libkrun fork is built from commit
   `e85a254ac1a1a2be58fb5b54e10937fecc55d268`.
 - On Linux, libkrun is built with `blk,net,gpu` against the tap's
@@ -19,12 +19,15 @@ archive to building the host-side software from pinned source:
   virtio-gpu. The pinned arm64 config already enables those options.
 - `init.krun` is built as a static guest-architecture ELF with Zig.
 - The storage and overlay ext4 templates are generated during installation.
-- The v1.0.1 release archive remains as a bootstrap for the Alpine guest rootfs.
+- The v1.1.2 release archive remains as a bootstrap for the Alpine guest rootfs.
+  On macOS arm64, the Formula uses the v1.1.2 Linux arm64 runtime archive for
+  that arm64 Linux guest rootfs because the published Darwin archive has a
+  truncated tar stream.
 - The guest rootfs is stored as `agent-rootfs.tar` in the keg. Upstream smolvm
   extracts it atomically into the user's cache on first use.
 - The Linux keg stages version-stable symlinks for libepoxy, libbz2,
   libvirglrenderer, and `virgl_render_server` beside libkrun, matching the
-  lookup paths in smolvm v1.0.1.
+  lookup paths in smolvm v1.1.2.
 - On macOS arm64, `smolvm` depends on the tap's `smolvm-libkrunfw` Formula and
   links its version-stable `opt_lib/libkrunfw.5.dylib` into the runtime bundle.
 - The macOS-only `smolvm-libkrunfw` Formula cross-builds the arm64 Linux guest
@@ -35,18 +38,22 @@ archive to building the host-side software from pinned source:
 - The source-built dylib uses `@rpath/libkrunfw.5.dylib`, is ad-hoc signed,
   and preserves that install name through bottle relocation.
 
-The generated Cargo lockfile is committed at
-`Resources/smolvm/Cargo.lock`. Upstream v1.0.1 does not include one.
+Upstream v1.1.2 includes `Cargo.lock`, so the tap no longer carries a
+separate generated lockfile.
 
 The sibling checkout at `../../smol-machines/smolvm` is not required for a
-build. The v1.0.1 tag records the libkrun and libkrunfw commits above, and the
+build. The v1.1.2 tag records the libkrun and libkrunfw commits above, and the
 Formula downloads those exact commits directly.
 
 The untracked `reproduce.sh` predates this work and demonstrates the upstream
-v1.0.1 release's `init.krun` architecture issue. It is user-owned and should not
-be discarded.
+v1.0.1 release's historical `init.krun` architecture issue. It is user-owned
+and should not be discarded.
 
-## Proven result
+## Previous Proven Result
+
+The following is the last fully published baseline recorded before the v1.1.2
+update. Rerun the full source, Formula, and smoke checks for the new version
+before publishing bottles.
 
 The complete Formula was built on Linux x86_64 using:
 
@@ -191,9 +198,9 @@ remains the authoritative packaging implementation.
 
 `make formula-check` styles the local Formula, then compares it with the
 Formula in `brew --repo samhclark/redist` before running audit and test. If
-the target reports a mismatch, sync the registered tap checkout first. Include
-the complete tap state, especially `Resources/smolvm/Cargo.lock`, before using
-the target or rebuilding.
+the target reports a mismatch, sync the registered tap checkout first and make
+sure the registered tap contains the same Formula revision before using the
+target or rebuilding.
 
 After installing or upgrading the Formula on a KVM/HVF-capable development
 host, run the end-to-end guest boot smoke test:
@@ -268,9 +275,9 @@ This creates `localhost/smolvm-vulkan-smoke:dev`. The multi-stage
 compiles a small Vulkan C program, and installs the COPR's Venus-enabled Mesa
 runtime in the final image. No Docker daemon is used.
 
-The local image validates the build artifact, but smolvm v1.0.1 cannot consume
-Podman's local image store directly. smolvm pulls OCI images from a registry
-inside its guest. Run the published image through smolvm with:
+The local image validates the image build artifact. The installed smoke target
+still runs a registry-published image so it matches what smolvm can pull inside
+its guest:
 
 ```sh
 make smoke-vulkan-compute-installed
@@ -278,11 +285,9 @@ make smoke-vulkan-compute-installed
 
 The test pulls `ghcr.io/samhclark/smolvm-vulkan-smoke:main`, enables a 2 GiB
 virtio-gpu shared-memory region, and explicitly runs the image's
-`/usr/local/bin/smolvm-vulkan-compute` executable. The explicit command is
-required because smolvm v1.0.1 rejects an empty `machine run` command before it
-loads the OCI entrypoint. The probe rejects llvmpipe and any device not named
-`Virtio-GPU Venus`, then verifies the shader's output buffer before returning
-`smolvm-vulkan-compute-smoke-ok`.
+`/usr/local/bin/smolvm-vulkan-compute` executable. The probe rejects llvmpipe
+and any device not named `Virtio-GPU Venus`, then verifies the shader's output
+buffer before returning `smolvm-vulkan-compute-smoke-ok`.
 
 Override the image with an immutable digest from the image workflow when
 reproducing a specific result:
@@ -384,8 +389,9 @@ For an actual new release:
 2. Update the smolvm URL/version/hash, pinned libkrun and libkrunfw revisions
    and hashes, kernel version/hash, and per-platform runtime archive hashes in
    both `Formula/smolvm.rb` and `Makefile`.
-3. Generate a fresh Cargo lockfile from the exact tag and replace
-   `Resources/smolvm/Cargo.lock`. Review dependency changes before committing.
+3. Use the exact tag's `Cargo.lock` when upstream includes one. If a future tag
+   omits it, generate a fresh lockfile from that exact tag and review
+   dependency changes before committing.
 4. Recheck every source patch in the Formula and Makefile. Remove patches that
    upstream fixed, and fail explicitly if an expected replacement no longer
    matches.
@@ -483,10 +489,12 @@ or relying on the sibling checkout.
 
 The `smolvm-sdk` submodule is not needed for the CLI build.
 
-### init.krun must be rebuilt
+### init.krun is rebuilt
 
-The v1.0.1 Linux x86_64 release contains an aarch64 `init.krun`. The Formula
-does not reuse it. It compiles the pinned libkrun init sources with:
+The v1.1.2 Linux x86_64 release fixes the old aarch64 `init.krun` packaging
+mistake. The Formula still compiles `init.krun` from the pinned libkrun source
+because libkrun embeds that binary at compile time and the source build should
+not depend on a host-runtime binary for this piece:
 
 ```sh
 zig cc -target x86_64-linux-musl -O2 -static -s -Wall \
@@ -609,8 +617,8 @@ patches before `olddefconfig`.
 
 ### smolvm
 
-The source archive receives the committed Cargo lockfile and is built with
-`--locked`.
+The source archive includes upstream's committed Cargo lockfile and is built
+with `--locked`.
 
 The source is patched to search beside the running `smolvm-bin` for
 `init.krun`. This is required for Linuxbrew prefixes such as
@@ -618,14 +626,14 @@ The source is patched to search beside the running `smolvm-bin` for
 `/usr/local/share/smolvm`, and `/opt/homebrew/share/smolvm`.
 
 The built init is also copied into the bundled agent rootfs. This avoids the
-same problem for the normal bundled-rootfs path and replaces the incorrect
-release init.
+same path problem for the normal bundled-rootfs path and keeps the embedded
+and rootfs init binaries in sync.
 
 The Formula archives that rootfs rather than installing its directory tree
 directly into the keg. Its Alpine executables are guest binaries linked against
 musl and guest libraries; if installed unpacked, `brew linkage --test` mistakes
 them for host executables and reports missing and unwanted system libraries.
-smolvm v1.0.1 already supports `SMOLVM_AGENT_ROOTFS_TAR`, including
+smolvm v1.1.2 supports `SMOLVM_AGENT_ROOTFS_TAR`, including
 content-versioned, atomic extraction into the user's cache, so no custom
 extraction code is needed in the tap.
 
@@ -796,61 +804,39 @@ virglrenderer pin will need regular security updates.
 
 ## Project roadmap
 
-### 1. Finish the smolvm revision 3 release
+### 1. Publish the smolvm v1.1.2 bottles
 
-`smolvm-libkrunfw` is now built from source and bottled for macOS arm64. The
-next release step is to publish `smolvm` revision 3, which wires macOS smolvm
-to that packaged firmware dylib.
+After the v1.1.2 update lands on `main`, confirm a `tests.yml` run passes on
+Linux x86_64, Linux arm64, and macOS 26 arm64:
 
-The first integration commit was
-`b173a6664d0e3a4b586d510b5caf6396b8eb8ae3`. If its Homebrew run is still
-available and successful, it can be used for publishing even after a later
-docs-only commit, because the publish workflow only compares Formula inputs.
+```sh
+gh run list --workflow tests.yml --branch main --limit 5
+gh run view <run-id> --json conclusion,jobs
+```
 
-Checklist:
+Then publish the smolvm bottles from that run:
 
-1. Confirm the Homebrew run for `b173a66`, or a newer run with the same Formula
-   inputs, passes every job:
+```sh
+gh workflow run publish.yml -f formula=smolvm -f run_id=<successful-run-id>
+gh run watch
+```
 
-   ```sh
-   gh run list --workflow tests.yml --branch main --limit 5
-   gh run view <run-id> --json conclusion,jobs
-   ```
+The expected release tag is `smolvm-1.1.2`, with `x86_64_linux`,
+`arm64_linux`, and `arm64_tahoe` bottles. After syncing Homebrew's generated
+bottle-block commit, verify a force-poured bottle on a KVM Linux host and on a
+real Apple Silicon Mac with:
 
-2. Inspect the `macos-26-arm64` smolvm job. It should pour the
-   `smolvm-libkrunfw` dependency bottle, build smolvm revision 3, pass the
-   Formula test, and upload a `bottles-macos-26-arm64` artifact.
-3. Publish the smolvm bottles:
+```sh
+brew reinstall --force-bottle samhclark/redist/smolvm
+brew test samhclark/redist/smolvm
+brew linkage --test samhclark/redist/smolvm
+make smoke-installed
+```
 
-   ```sh
-   gh workflow run publish.yml -f formula=smolvm -f run_id=<successful-run-id>
-   gh run watch
-   ```
-
-   The expected release tag is `smolvm-1.0.1_3`, with `x86_64_linux`,
-   `arm64_linux`, and `arm64_tahoe` bottles.
-4. Sync Homebrew's generated bottle-block commit. If SSH fetch hangs on this
-   Linux host, use the HTTPS remote directly:
-
-   ```sh
-   git fetch --no-tags https://github.com/samhclark/homebrew-redist.git main
-   git merge --ff-only FETCH_HEAD
-   ```
-
-5. On a real Apple Silicon Mac, verify the published bottle:
-
-   ```sh
-   brew update
-   brew reinstall --force-bottle samhclark/redist/smolvm
-   brew test samhclark/redist/smolvm
-   brew linkage --test samhclark/redist/smolvm
-   make smoke-installed
-   ```
-
-   The Formula test should confirm that
-   `$(brew --prefix smolvm)/libexec/lib/libkrunfw.5.dylib` is a symlink into
-   `$(brew --prefix smolvm-libkrunfw)/lib` and that the dylib ID remains
-   `@rpath/libkrunfw.5.dylib`.
+The macOS Formula test should confirm that
+`$(brew --prefix smolvm)/libexec/lib/libkrunfw.5.dylib` is a symlink into
+`$(brew --prefix smolvm-libkrunfw)/lib` and that the dylib ID remains
+`@rpath/libkrunfw.5.dylib`.
 
 ### 2. Pin the Vulkan compute smoke image
 
@@ -876,7 +862,7 @@ Linux KVM, virtio-gpu, Venus, and Mesa path.
 
 ### 3. Decide how much binary bootstrap remains acceptable
 
-After smolvm revision 3, the remaining binary inputs are the release Alpine
+After the v1.1.2 update, the remaining binary inputs are the release Alpine
 guest rootfs and its statically linked `smolvm-agent`. Rebuilding that rootfs
 inside Homebrew is still a poor fit because upstream's rootfs script performs
 networked Alpine package installation during the build.
@@ -889,16 +875,16 @@ Practical next actions:
 - Consider Cargo vendoring only if offline source builds become a requirement;
   the current lockfile already gives deterministic Rust dependency resolution.
 
-### 4. Fix or report the smolvm entrypoint behavior
+### 4. Recheck the smolvm entrypoint behavior
 
-`smolvm machine run` in v1.0.1 rejects an empty command before loading the OCI
-image entrypoint, although the help text documents entrypoint-style usage. The
-Makefile works around this by passing an explicit command for the Vulkan
-compute image.
+`smolvm machine run` in v1.0.1 rejected an empty command before loading the OCI
+image entrypoint, although the help text documented entrypoint-style usage. The
+Makefile still passes an explicit command for the Vulkan compute image.
 
-Either report this upstream or patch it locally when updating smolvm. The
-desired behavior is that an image with an entrypoint can run without an
-explicit `-- <command>` override.
+Recheck that behavior on v1.1.2 before deciding whether to remove the explicit
+command override or report a remaining upstream issue. The desired behavior is
+that an image with an entrypoint can run without an explicit `-- <command>`
+override.
 
 ### 5. Defer optional package splits and macOS GPU work
 
@@ -914,10 +900,10 @@ on an Apple Silicon Mac. That is separate from the headless VM path.
 
 ### 6. Use the release checklist for future upstream versions
 
-There is no known release newer than smolvm v1.0.1 at this checkpoint. For any
-future release, start from the `Updating smolvm` checklist above after upstream
-publishes a real tag and matching runtime archives. Do not assume a version
-number or copy submodule revisions from a different tag.
+The current target is smolvm v1.1.2. For any future release, start from the
+`Updating smolvm` checklist above after upstream publishes a real tag and
+matching runtime archives. Do not assume a version number or copy submodule
+revisions from a different tag.
 
 ## Reference sources
 

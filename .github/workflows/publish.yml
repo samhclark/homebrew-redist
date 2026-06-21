@@ -67,7 +67,6 @@ jobs:
               formula_paths=(
                 Formula/smolvm.rb
                 Formula/smolvm-libkrunfw.rb
-                Resources/smolvm/Cargo.lock
               )
               ;;
             smolvm-libkrunfw)
