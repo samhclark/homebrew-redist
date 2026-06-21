@@ -79,7 +79,7 @@ jobs:
             if [[ "${#formulas[@]}" -eq 0 ]]; then
               echo "No Formula input changes detected."
             else
-              printf -- '- `%s`\n' "${formulas[@]}"
+              printf -- "- \`%s\`\\n" "${formulas[@]}"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
