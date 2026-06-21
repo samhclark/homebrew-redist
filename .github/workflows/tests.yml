@@ -12,8 +12,81 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Detect formula changes
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: read
+
+    outputs:
+      formulas: ${{ steps.detect.outputs.formulas }}
+      libkrunfw: ${{ steps.detect.outputs.libkrunfw }}
+      smolvm: ${{ steps.detect.outputs.smolvm }}
+      virglrenderer: ${{ steps.detect.outputs.virglrenderer }}
+
+    steps:
+      - name: Check out tap
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed Formula inputs
+        id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          formulas=()
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            formulas=(smolvm-virglrenderer smolvm-libkrunfw smolvm)
+          else
+            if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+              base="${{ github.event.pull_request.base.sha }}"
+            else
+              base="${{ github.event.before }}"
+              if [[ -z "$base" || "$base" =~ ^0+$ ]]; then
+                base="$(git rev-parse "${GITHUB_SHA}^")"
+              fi
+            fi
+
+            mapfile -t formulas < <(bash .github/scripts/formula-inputs.sh changed "$base" "$GITHUB_SHA")
+          fi
+
+          smolvm=false
+          libkrunfw=false
+          virglrenderer=false
+
+          for formula in "${formulas[@]}"; do
+            case "$formula" in
+              smolvm) smolvm=true ;;
+              smolvm-libkrunfw) libkrunfw=true ;;
+              smolvm-virglrenderer) virglrenderer=true ;;
+            esac
+          done
+
+          formulas_csv="$(IFS=,; printf '%s' "${formulas[*]}")"
+          {
+            printf 'formulas=%s\n' "$formulas_csv"
+            printf 'smolvm=%s\n' "$smolvm"
+            printf 'libkrunfw=%s\n' "$libkrunfw"
+            printf 'virglrenderer=%s\n' "$virglrenderer"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Formula changes"
+            echo
+            if [[ "${#formulas[@]}" -eq 0 ]]; then
+              echo "No Formula input changes detected."
+            else
+              printf -- '- `%s`\n' "${formulas[@]}"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
   test-bot:
-    name: brew test-bot (${{ matrix.platform }})
+    name: brew test-bot smolvm (${{ matrix.platform }})
+    needs: changes
+    if: needs.changes.outputs.smolvm == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -45,12 +118,12 @@ jobs:
     steps:
       - name: Set up Homebrew
         id: set-up-homebrew
-        uses: Homebrew/actions/setup-homebrew@main
+        uses: Homebrew/actions/setup-homebrew@6315ef70a8bfcd2c71104383846591ac113ace33 # main
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Cache Homebrew Bundler RubyGems
-        uses: actions/cache@v4
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: ${{ steps.set-up-homebrew.outputs.gems-path }}
           key: ${{ matrix.platform }}-rubygems-${{ steps.set-up-homebrew.outputs.gems-hash }}
@@ -72,17 +145,12 @@ jobs:
       - name: Check tap syntax
         run: brew test-bot --only-tap-syntax
 
-      - name: Build and test changed formulae
-        if: github.event_name == 'pull_request'
-        run: brew test-bot --only-formulae --fail-fast
-
       - name: Build and test smolvm
-        if: github.event_name != 'pull_request'
         run: brew test-bot --only-formulae --testing-formulae=smolvm --fail-fast
 
       - name: Upload bottles
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: bottles-${{ matrix.platform }}
           path: "*.bottle.*"
@@ -90,8 +158,9 @@ jobs:
           retention-days: 7
 
   test-virglrenderer:
-    if: github.event_name != 'pull_request'
     name: brew test-bot smolvm-virglrenderer (${{ matrix.platform }})
+    needs: changes
+    if: needs.changes.outputs.virglrenderer == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -117,12 +186,12 @@ jobs:
     steps:
       - name: Set up Homebrew
         id: set-up-homebrew
-        uses: Homebrew/actions/setup-homebrew@main
+        uses: Homebrew/actions/setup-homebrew@6315ef70a8bfcd2c71104383846591ac113ace33 # main
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Cache Homebrew Bundler RubyGems
-        uses: actions/cache@v4
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: ${{ steps.set-up-homebrew.outputs.gems-path }}
           key: ${{ matrix.platform }}-virglrenderer-rubygems-${{ steps.set-up-homebrew.outputs.gems-hash }}
@@ -149,16 +218,17 @@ jobs:
 
       - name: Upload bottles
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: virglrenderer-bottles-${{ matrix.platform }}
           path: "*.bottle.*"
-          if-no-files-found: ignore
+          if-no-files-found: ${{ github.event_name == 'pull_request' && 'ignore' || 'error' }}
           retention-days: 7
 
   test-libkrunfw:
-    if: github.event_name != 'pull_request'
     name: brew test-bot smolvm-libkrunfw (macos-26-arm64)
+    needs: changes
+    if: needs.changes.outputs.libkrunfw == 'true'
     runs-on: macos-26
     timeout-minutes: 90
 
@@ -171,12 +241,12 @@ jobs:
     steps:
       - name: Set up Homebrew
         id: set-up-homebrew
-        uses: Homebrew/actions/setup-homebrew@main
+        uses: Homebrew/actions/setup-homebrew@6315ef70a8bfcd2c71104383846591ac113ace33 # main
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Cache Homebrew Bundler RubyGems
-        uses: actions/cache@v4
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: ${{ steps.set-up-homebrew.outputs.gems-path }}
           key: macos-26-arm64-libkrunfw-rubygems-${{ steps.set-up-homebrew.outputs.gems-hash }}
@@ -203,9 +273,9 @@ jobs:
 
       - name: Upload bottles
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: libkrunfw-bottles-macos-26-arm64
           path: "*.bottle.*"
-          if-no-files-found: error
+          if-no-files-found: ${{ github.event_name == 'pull_request' && 'ignore' || 'error' }}
           retention-days: 7
