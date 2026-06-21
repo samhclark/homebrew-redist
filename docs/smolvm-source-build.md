@@ -304,51 +304,52 @@ GitHub-hosted Linux x86_64, Linux arm64, and macOS 26 arm64 runners. The Linux
 jobs use `ubuntu-24.04` and `ubuntu-24.04-arm` with Homebrew's official
 container; the macOS job uses the native `macos-26` runner. All jobs use
 Homebrew's setup action. The workflow runs for pull requests, pushes to `main`,
-and manual dispatches. It checks tap syntax, builds changed Formulae from
-source on pull requests, and always builds smolvm on `main` and manual runs. It
-runs the Formula tests and retains platform-specific bottles as seven-day
-workflow artifacts. On push and manual runs, missing smolvm bottle artifacts
-are treated as failures so Homebrew `test-bot` cannot hide a failed Formula
-step. On Linux, the Formula test loads libkrun and asserts that its GPU feature
-is enabled.
+and manual dispatches.
+
+The first job detects Formula input changes with
+`.github/scripts/formula-inputs.sh`. It compares Formula files after removing
+Homebrew-generated `bottle do` blocks, so generated bottle-block commits,
+docs-only changes, and workflow-only changes do not rebuild smolvm. Pull
+requests and pushes build only the Formulae whose non-bottle inputs changed.
+Manual dispatches intentionally build every bottled Formula. Each Formula job
+checks tap syntax, builds from source, runs the Formula test, and retains
+platform-specific bottles as seven-day workflow artifacts. On Linux, the
+smolvm Formula test loads libkrun and asserts that its GPU feature is enabled.
 
 The test workflow deliberately has read-only repository permissions.
 
-Linux pushes and manual runs also build `smolvm-virglrenderer` in a separate
-job on x86_64 and arm64. Its artifacts use the
-`virglrenderer-bottles-<platform>` prefix so the smolvm-only publisher does not
-mistake them for release inputs.
-
 `.github/workflows/publish.yml` is a separate, manually dispatched workflow
-that publishes one Formula's artifacts from a selected successful test run.
-Choose `smolvm`, `smolvm-libkrunfw`, or `smolvm-virglrenderer` when
-dispatching it. It:
+that publishes bottle artifacts from a selected successful test run. The
+default `formula=changed` mode publishes every Formula represented by that
+run's bottle artifacts, in dependency order:
+`smolvm-virglrenderer`, `smolvm-libkrunfw`, then `smolvm`. A specific Formula
+can still be selected for a focused republish. The workflow:
 
 1. Confirms the run used `tests.yml`, succeeded on `main`, and is an ancestor
    of the current revision.
-2. Refuses to publish if the selected Formula's inputs changed after that run.
-   For `smolvm`, this includes `Formula/smolvm-libkrunfw.rb`, because the
-   macOS bottle depends on that packaged firmware dylib.
-3. Requires exactly the selected Formula's supported bottle tags, all built
+2. Downloads all `*bottles-*` artifacts from that run.
+3. Selects Formulae from bottle JSON files whose `tap_git_revision` matches the
+   selected run.
+4. Refuses to publish if any selected Formula's non-bottle inputs changed after
+   the run. Existing bottle blocks are ignored for this check, so sequential
+   publishes and generated bottle-block commits do not invalidate the run.
+5. Requires exactly each selected Formula's supported bottle tags, all built
    from the selected revision.
-4. Runs Homebrew's `brew pr-upload`, which merges the bottle JSON into the
-   Formula, creates the `<formula>-<version>` GitHub release, and uploads the
-   validated bottle archives.
-5. Pushes Homebrew's generated bottle-block commit to `main`.
+6. Runs Homebrew's `brew pr-upload` for each selected Formula, creating the
+   `<formula>-<version>` GitHub release and committing generated bottle blocks.
+7. Pushes Homebrew's generated bottle-block commit or commits to `main`.
 
 Publish within the test artifacts' seven-day retention window:
 
 ```sh
 gh run list --workflow tests.yml --branch main --status success --limit 5
-gh workflow run publish.yml -f formula=smolvm -f run_id=<run-id>
-gh workflow run publish.yml \
-  -f formula=smolvm-libkrunfw \
-  -f run_id=<run-id>
-gh workflow run publish.yml \
-  -f formula=smolvm-virglrenderer \
-  -f run_id=<run-id>
+gh workflow run publish.yml -f run_id=<run-id>
 gh run watch
 ```
+
+Use `-f formula=smolvm`, `-f formula=smolvm-libkrunfw`, or
+`-f formula=smolvm-virglrenderer` only when intentionally publishing one
+Formula from the run.
 
 The workflow's `GITHUB_TOKEN` needs the repository's normal `contents: write`
 permission. The manual dispatch and source checks prevent routine pushes from
@@ -411,13 +412,12 @@ For an actual new release:
    ```
 
 6. Push the version update and wait for `tests.yml` to pass on Linux x86_64,
-   Linux arm64, and macOS arm64. Inspect all generated bottles.
+   Linux arm64, and macOS arm64 for the changed Formulae. Inspect all generated
+   bottles.
 7. Publish that successful run within seven days:
 
    ```sh
-   gh workflow run publish.yml \
-     -f formula=smolvm \
-     -f run_id=<successful-tests-run-id>
+   gh workflow run publish.yml -f run_id=<successful-tests-run-id>
    ```
 
 8. Pull Homebrew's generated bottle-block commit, reinstall normally, confirm
@@ -804,27 +804,23 @@ virglrenderer pin will need regular security updates.
 
 ## Project roadmap
 
-### 1. Publish the smolvm v1.1.2 bottles
+### 1. Reduce the smolvm Linux build time
 
-After the v1.1.2 update lands on `main`, confirm a `tests.yml` run passes on
-Linux x86_64, Linux arm64, and macOS 26 arm64:
+The Linux x86_64 smolvm bottle currently spends roughly 24 minutes inside the
+single `brew test-bot --testing-formulae=smolvm` step. The largest structural
+opportunity is to stop rebuilding libkrunfw and its Linux kernel inside the
+main smolvm Formula when those inputs have not changed.
 
-```sh
-gh run list --workflow tests.yml --branch main --limit 5
-gh run view <run-id> --json conclusion,jobs
-```
+The macOS `smolvm-libkrunfw` Formula already proves the split works for the
+arm64 firmware dylib. The next build-time project should extend that package
+boundary to Linux, publish Linux `smolvm-libkrunfw` bottles, and then teach the
+main smolvm Formula to depend on and bundle the packaged firmware on Linux as
+it already does on macOS. If this creates a real coordination problem with
+libkrun feature choices or `init.krun`, revisit a later `smolvm-libkrun` split;
+do not start there.
 
-Then publish the smolvm bottles from that run:
-
-```sh
-gh workflow run publish.yml -f formula=smolvm -f run_id=<successful-run-id>
-gh run watch
-```
-
-The expected release tag is `smolvm-1.1.2`, with `x86_64_linux`,
-`arm64_linux`, and `arm64_tahoe` bottles. After syncing Homebrew's generated
-bottle-block commit, verify a force-poured bottle on a KVM Linux host and on a
-real Apple Silicon Mac with:
+After any build-time split, verify a force-poured bottle on a KVM Linux host
+and on a real Apple Silicon Mac with:
 
 ```sh
 brew reinstall --force-bottle samhclark/redist/smolvm
@@ -833,7 +829,7 @@ brew linkage --test samhclark/redist/smolvm
 make smoke-installed
 ```
 
-The macOS Formula test should confirm that
+The macOS Formula test must continue to confirm that
 `$(brew --prefix smolvm)/libexec/lib/libkrunfw.5.dylib` is a symlink into
 `$(brew --prefix smolvm-libkrunfw)/lib` and that the dylib ID remains
 `@rpath/libkrunfw.5.dylib`.
