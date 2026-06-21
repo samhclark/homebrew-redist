@@ -226,10 +226,29 @@ jobs:
           retention-days: 7
 
   test-libkrunfw:
-    name: brew test-bot smolvm-libkrunfw (macos-26-arm64)
+    name: brew test-bot smolvm-libkrunfw (${{ matrix.platform }})
     needs: changes
     if: needs.changes.outputs.libkrunfw == 'true'
-    runs-on: macos-26
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x86_64
+            runner: ubuntu-24.04
+            container: ghcr.io/homebrew/brew:main
+            uname_os: Linux
+            uname_arch: x86_64
+          - platform: linux-arm64
+            runner: ubuntu-24.04-arm
+            container: ghcr.io/homebrew/brew:main
+            uname_os: Linux
+            uname_arch: aarch64
+          - platform: macos-26-arm64
+            runner: macos-26
+            uname_os: Darwin
+            uname_arch: arm64
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container }}
     timeout-minutes: 90
 
     permissions:
@@ -249,14 +268,14 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: ${{ steps.set-up-homebrew.outputs.gems-path }}
-          key: macos-26-arm64-libkrunfw-rubygems-${{ steps.set-up-homebrew.outputs.gems-hash }}
+          key: ${{ matrix.platform }}-libkrunfw-rubygems-${{ steps.set-up-homebrew.outputs.gems-hash }}
           restore-keys: |
-            macos-26-arm64-libkrunfw-rubygems-
+            ${{ matrix.platform }}-libkrunfw-rubygems-
 
       - name: Verify runner architecture
         run: |
-          test "$(uname -s)" = "Darwin"
-          test "$(uname -m)" = "arm64"
+          test "$(uname -s)" = "${{ matrix.uname_os }}"
+          test "$(uname -m)" = "${{ matrix.uname_arch }}"
           df -h
 
       - name: Clean up runner
@@ -275,7 +294,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: libkrunfw-bottles-macos-26-arm64
+          name: libkrunfw-bottles-${{ matrix.platform }}
           path: "*.bottle.*"
           if-no-files-found: ${{ github.event_name == 'pull_request' && 'ignore' || 'error' }}
           retention-days: 7

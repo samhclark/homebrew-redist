@@ -18,7 +18,7 @@ formula_path() {
 formula_expected_tags() {
   case "$1" in
     smolvm) printf '%s\n' "arm64_linux arm64_tahoe x86_64_linux" ;;
-    smolvm-libkrunfw) printf '%s\n' "arm64_tahoe" ;;
+    smolvm-libkrunfw) printf '%s\n' "arm64_linux arm64_tahoe x86_64_linux" ;;
     smolvm-virglrenderer) printf '%s\n' "arm64_linux x86_64_linux" ;;
     *)
       printf 'unknown formula: %s\n' "$1" >&2

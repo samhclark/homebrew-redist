@@ -12,11 +12,11 @@ archive to building the host-side software from pinned source:
   `e85a254ac1a1a2be58fb5b54e10937fecc55d268`.
 - On Linux, libkrun is built with `blk,net,gpu` against the tap's
   `smolvm-virglrenderer` Formula. macOS remains on `blk,net`.
-- On Linux, the smol-machines libkrunfw fork is built from commit
+- `smolvm-libkrunfw` builds the smol-machines libkrunfw fork from commit
   `516ceece6aed60ccc84ac8faa459885062e39400`, including its patched Linux
-  6.12.87 guest kernel.
-- On x86_64 Linux, the libkrunfw kernel config is amended to enable DRM and
-  virtio-gpu. The pinned arm64 config already enables those options.
+  6.12.87 guest kernel, for macOS arm64, Linux arm64, and Linux x86_64.
+- On x86_64 Linux, the `smolvm-libkrunfw` kernel config is amended to enable
+  DRM and virtio-gpu. The pinned arm64 config already enables those options.
 - `init.krun` is built as a static guest-architecture ELF with Zig.
 - The storage and overlay ext4 templates are generated during installation.
 - The v1.1.2 release archive remains as a bootstrap for the Alpine guest rootfs.
@@ -28,11 +28,13 @@ archive to building the host-side software from pinned source:
 - The Linux keg stages version-stable symlinks for libepoxy, libbz2,
   libvirglrenderer, and `virgl_render_server` beside libkrun, matching the
   lookup paths in smolvm v1.1.2.
-- On macOS arm64, `smolvm` depends on the tap's `smolvm-libkrunfw` Formula and
-  links its version-stable `opt_lib/libkrunfw.5.dylib` into the runtime bundle.
-- The macOS-only `smolvm-libkrunfw` Formula cross-builds the arm64 Linux guest
-  kernel and compiles the generated bundle into a Mach-O dylib. Its macOS 26
-  arm64 bottle is published separately and reused across `smolvm` rebuilds.
+- `smolvm` depends on the tap's `smolvm-libkrunfw` Formula and links its
+  version-stable `opt_lib` library into the runtime bundle on both Linux and
+  macOS.
+- On Linux, `smolvm-libkrunfw` builds the native guest-architecture kernel and
+  installs `libkrunfw.so.5.4.0` with stable SONAME symlinks. On macOS arm64, it
+  cross-builds the arm64 Linux guest kernel and compiles the generated bundle
+  into a Mach-O dylib.
 - The Makefile's macOS path has been updated to use the same source build
   instead of copying the upstream release dylib.
 - The source-built dylib uses `@rpath/libkrunfw.5.dylib`, is ad-hoc signed,
@@ -111,13 +113,28 @@ Formula test, strict linkage test, bare-guest smoke, GPU-device smoke, and
 Vulkan smoke. The separately packaged `smolvm-virglrenderer` 1.3.0 bottles are
 published for Linux x86_64 and arm64.
 
-## macOS libkrunfw source build
+## smolvm-libkrunfw source build
 
-`Formula/smolvm-libkrunfw.rb` is macOS arm64 only and builds the smol-machines
-libkrunfw fork from commit
-`516ceece6aed60ccc84ac8faa459885062e39400` with Linux 6.12.87.
+`Formula/smolvm-libkrunfw.rb` builds the smol-machines libkrunfw fork from
+commit `516ceece6aed60ccc84ac8faa459885062e39400` with Linux 6.12.87. It is a
+separate Formula on macOS arm64, Linux arm64, and Linux x86_64 so the full
+kernel build can be bottled and reused across `smolvm` rebuilds.
 
-The intended build is:
+On Linux, the intended build is:
+
+1. Stage pyelftools from the pinned source archive and expose it with
+   `PYTHONPATH`.
+2. Copy the pinned Linux kernel tarball into libkrunfw's `tarballs/`
+   directory.
+3. On x86_64, amend `config-libkrunfw_x86_64` to enable DRM and
+   virtio-gpu.
+4. Build from inside the libkrunfw source directory with
+   `make GUESTARCH=<x86_64|aarch64>`, using the real host compiler rather
+   than Homebrew's Superenv compiler shim.
+5. Install `libkrunfw.so.5.4.0` plus the `libkrunfw.so.5` and
+   `libkrunfw.so` symlinks.
+
+On macOS arm64, the intended build is:
 
 1. Extract the Linux kernel source archive.
 2. Apply the fork's `patches/0*.patch` series.
@@ -163,8 +180,9 @@ relocation design below.
 The following `macos-26` run passed the Formula test with the preserved
 `@rpath` ID, and the bottle was published at
 <https://github.com/samhclark/homebrew-redist/releases/tag/smolvm-libkrunfw-5.4.0>.
-The main `smolvm` Formula now depends on it and links the dependency's
-version-stable `opt_lib` dylib into `libexec/lib`.
+The main `smolvm` Formula now depends on `smolvm-libkrunfw` on all supported
+platforms and links the dependency's version-stable `opt_lib` library into
+`libexec/lib`.
 
 ## Reproducing after a reboot
 
@@ -387,9 +405,10 @@ For an actual new release:
    git -C ../../smol-machines/smolvm ls-tree <tag> libkrun libkrunfw
    ```
 
-2. Update the smolvm URL/version/hash, pinned libkrun and libkrunfw revisions
-   and hashes, kernel version/hash, and per-platform runtime archive hashes in
-   both `Formula/smolvm.rb` and `Makefile`.
+2. Update the smolvm URL/version/hash, pinned libkrun revision/hash, and
+   per-platform runtime archive hashes in `Formula/smolvm.rb` and `Makefile`.
+   Update the pinned libkrunfw revision/hash and kernel version/hash in
+   `Formula/smolvm-libkrunfw.rb` and `Makefile`.
 3. Use the exact tag's `Cargo.lock` when upstream includes one. If a future tag
    omits it, generate a fresh lockfile from that exact tag and review
    dependency changes before committing.
@@ -449,6 +468,8 @@ Linux-only:
 - `libepoxy`: loaded explicitly by smolvm before virglrenderer.
 - `openssl@3`: kernel host-side crypto tooling.
 - `python@3.14`: runs libkrunfw's bundle generator.
+- `smolvm-libkrunfw`: supplies the bottled libkrunfw shared library and Linux
+  guest kernel that `smolvm` bundles through version-stable symlinks.
 - `smolvm-virglrenderer`: supplies libvirglrenderer and
   `virgl_render_server`.
 - `xz`: extracts the Linux kernel source archive.
@@ -464,6 +485,8 @@ macOS-only:
 - `make`: provides GNU `gmake`; Apple's bundled make is too old to trust for
   the kernel build.
 - `python@3.14`: runs libkrunfw's bundle generator.
+- `smolvm-libkrunfw`: supplies the bottled libkrunfw dylib that `smolvm`
+  bundles through version-stable symlinks.
 - `xz`: extracts the Linux kernel source archive.
 
 The macOS build also downloads the pinned musl 1.2.5 source archive and uses
@@ -668,16 +691,16 @@ network access to crates.io unless Homebrew's cache is already populated.
 
 ## Should libkrun and libkrunfw become separate Formulae?
 
-### libkrunfw: yes
+### libkrunfw: done
 
 A tap-specific `smolvm-libkrunfw` Formula provides the clearest benefit and is
-now published for macOS arm64:
+now implemented for macOS arm64, Linux arm64, and Linux x86_64:
 
 - It isolates the slow full-kernel build.
 - It can be bottled and reused across smolvm rebuilds.
 - Its ABI and SONAME already form a natural package boundary.
-- Linux and macOS policy can be handled independently. Linux currently builds
-  libkrunfw inside `smolvm`; macOS uses the dedicated bottled formula.
+- Linux and macOS policy can be handled independently while `smolvm` consumes
+  version-stable symlinks from the dependency's `opt_lib`.
 
 It should be named for smolvm rather than simply `libkrunfw`. smolvm pins a
 patched fork and kernel configuration, so presenting it as a generic upstream
@@ -707,9 +730,10 @@ If split, the main Formula should load the libraries from dependency `opt_lib`
 paths rather than copying them into its own Cellar. The current loader
 explicitly opens both libraries from smolvm's single `libexec/lib` directory,
 so the least invasive implementation is to install symlinks there that point
-at each dependency's version-stable `opt_lib` path. A cleaner but larger change
-would teach smolvm separate libkrun and libkrunfw search paths. Linux loader
-paths, macOS install names/rpaths, and codesigning all need dedicated tests.
+at each dependency's version-stable `opt_lib` path. This is now how
+`smolvm-libkrunfw` is consumed. A cleaner but larger change would teach smolvm
+separate libkrun and libkrunfw search paths. Linux loader paths, macOS install
+names/rpaths, and codesigning all need dedicated tests.
 
 ## GPU support
 
@@ -804,20 +828,18 @@ virglrenderer pin will need regular security updates.
 
 ## Project roadmap
 
-### 1. Reduce the smolvm Linux build time
+### 1. Validate the smolvm-libkrunfw split
 
-The Linux x86_64 smolvm bottle currently spends roughly 24 minutes inside the
-single `brew test-bot --testing-formulae=smolvm` step. The largest structural
-opportunity is to stop rebuilding libkrunfw and its Linux kernel inside the
-main smolvm Formula when those inputs have not changed.
+The Linux x86_64 smolvm bottle previously spent roughly 24 minutes inside the
+single `brew test-bot --testing-formulae=smolvm` step. The split now moves the
+slow libkrunfw and Linux kernel build into `smolvm-libkrunfw`, so unchanged
+firmware inputs can be bottled once and reused across `smolvm` rebuilds.
 
-The macOS `smolvm-libkrunfw` Formula already proves the split works for the
-arm64 firmware dylib. The next build-time project should extend that package
-boundary to Linux, publish Linux `smolvm-libkrunfw` bottles, and then teach the
-main smolvm Formula to depend on and bundle the packaged firmware on Linux as
-it already does on macOS. If this creates a real coordination problem with
-libkrun feature choices or `init.krun`, revisit a later `smolvm-libkrun` split;
-do not start there.
+The remaining work is to publish Linux `smolvm-libkrunfw` bottles, rebuild
+`smolvm` against the packaged firmware, and compare the new Linux x86_64
+`smolvm` test-bot duration with the previous 24-minute baseline. If this
+creates a real coordination problem with libkrun feature choices or
+`init.krun`, revisit a later `smolvm-libkrun` split; do not start there.
 
 After any build-time split, verify a force-poured bottle on a KVM Linux host
 and on a real Apple Silicon Mac with:
@@ -829,10 +851,9 @@ brew linkage --test samhclark/redist/smolvm
 make smoke-installed
 ```
 
-The macOS Formula test must continue to confirm that
-`$(brew --prefix smolvm)/libexec/lib/libkrunfw.5.dylib` is a symlink into
-`$(brew --prefix smolvm-libkrunfw)/lib` and that the dylib ID remains
-`@rpath/libkrunfw.5.dylib`.
+The Formula tests must continue to confirm that the bundled libkrunfw entries
+are symlinks into `$(brew --prefix smolvm-libkrunfw)/lib`. On macOS, the dylib
+ID must remain `@rpath/libkrunfw.5.dylib`.
 
 ### 2. Pin the Vulkan compute smoke image
 

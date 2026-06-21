@@ -4,14 +4,7 @@ class Smolvm < Formula
   url "https://github.com/smol-machines/smolvm/archive/refs/tags/v1.1.2.tar.gz"
   sha256 "c1f079ff4c88f14b5f95b24842177b1f050570aa66848996670318b6b323ff4d"
   license all_of: ["Apache-2.0", "LGPL-2.1-only", "GPL-2.0-only"]
-
-  bottle do
-    root_url "https://github.com/samhclark/homebrew-redist/releases/download/smolvm-1.1.2"
-    rebuild 1
-    sha256               arm64_tahoe:  "c447dd1cc3ed108ab990e4289ac1bc6a2a17e23b629d45931f9f2d5cb259eba1"
-    sha256 cellar: :any, arm64_linux:  "e67772c23f1266badf2e8b56bef80a33f1fb5753b9834a276b5bca48b2ec8da3"
-    sha256 cellar: :any, x86_64_linux: "0c19bc9d601a56d545e80d9782b46e9e449689a96c65b83b74e0e80b06b18295"
-  end
+  revision 1
 
   depends_on "e2fsprogs" => :build
   depends_on "pkgconf" => :build
@@ -24,36 +17,11 @@ class Smolvm < Formula
   end
 
   on_linux do
-    depends_on "bc" => :build
-    depends_on "bison" => :build
-    depends_on "cpio" => :build
-    depends_on "elfutils" => :build
-    depends_on "flex" => :build
-    depends_on "gpatch" => :build
     depends_on "llvm" => :build
-    depends_on "openssl@3" => :build
-    depends_on "python@3.14" => :build
-    depends_on "xz" => :build
-    depends_on "zlib-ng-compat" => :build
-    depends_on "zstd" => :build
     depends_on "bzip2"
     depends_on "libepoxy"
+    depends_on "smolvm-libkrunfw"
     depends_on "smolvm-virglrenderer"
-
-    resource "libkrunfw" do
-      url "https://github.com/smol-machines/libkrunfw/archive/516ceece6aed60ccc84ac8faa459885062e39400.tar.gz"
-      sha256 "c9c43a5d54a239f2bb69f1c6762ad40854a8f5c996a9890872bd3ca39d52ba5d"
-    end
-
-    resource "linux-kernel" do
-      url "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.12.87.tar.xz"
-      sha256 "cc12a7644b4cef9e06627b29de8753e22b3d076703a9b52be84263e05c8b9830"
-    end
-
-    resource "pyelftools" do
-      url "https://files.pythonhosted.org/packages/b9/ab/33968940b2deb3d92f5b146bc6d4009a5f95d1d06c148ea2f9ee965071af/pyelftools-0.32.tar.gz"
-      sha256 "6de90ee7b8263e740c8715a925382d4099b354f29ac48ea40d840cf7aa14ace5"
-    end
   end
 
   preserve_rpath
@@ -105,7 +73,7 @@ class Smolvm < Formula
 
     if OS.linux?
       install_linux_gpu_runtime(libdir)
-      build_libkrunfw(libdir)
+      install_linux_libkrunfw(libdir)
     else
       libdir.install_symlink Formula["smolvm-libkrunfw"].opt_lib/"libkrunfw.5.dylib"
       libdir.install_symlink "libkrunfw.5.dylib" => "libkrunfw.dylib"
@@ -151,7 +119,9 @@ class Smolvm < Formula
     platform_notes = if OS.linux?
       <<~EOS
         libkrun is built with GPU support using the tap's virglrenderer package.
-        libkrunfw and its Linux guest kernel are built from source.
+        libkrunfw and its Linux guest kernel are provided by the tap's
+        smolvm-libkrunfw package, which is built from source and bottled
+        separately.
 
         smolvm requires KVM to run guests:
           * /dev/kvm must exist
@@ -160,7 +130,8 @@ class Smolvm < Formula
     else
       <<~EOS
         libkrunfw and its Linux guest kernel are provided by the tap's
-        smolvm-libkrunfw package, which is built from source on macOS arm64.
+        smolvm-libkrunfw package, which is built from source and bottled
+        separately.
       EOS
     end
 
@@ -182,6 +153,10 @@ class Smolvm < Formula
       assert_path_exists libexec/"lib/libepoxy.so.0"
       assert_path_exists libexec/"lib/libvirglrenderer.so.1"
       assert_predicate libexec/"lib/virgl_render_server", :executable?
+      libkrunfw = libexec/"lib/libkrunfw.so.5"
+      assert_predicate libkrunfw, :symlink?
+      assert_equal (Formula["smolvm-libkrunfw"].opt_lib/"libkrunfw.so.5").realpath,
+                   libkrunfw.realpath
 
       ENV.prepend_path "LD_LIBRARY_PATH", libexec/"lib"
       require "fiddle"
@@ -257,39 +232,11 @@ class Smolvm < Formula
     libdir.install_symlink virglrenderer.opt_libexec/"virgl_render_server"
   end
 
-  def build_libkrunfw(libdir)
-    libkrunfw = buildpath.parent/"libkrunfw"
-    pyelftools = buildpath.parent/"pyelftools"
-    resource("libkrunfw").stage libkrunfw
-    resource("pyelftools").stage pyelftools
-
-    if Hardware::CPU.intel?
-      inreplace libkrunfw/"config-libkrunfw_x86_64",
-                "# CONFIG_DRM is not set",
-                "CONFIG_DRM=y\nCONFIG_DRM_VIRTIO_GPU=y"
-    end
-
-    kernel_tarball = libkrunfw/"tarballs/linux-6.12.87.tar.xz"
-    kernel_tarball.dirname.mkpath
-    cp resource("linux-kernel").cached_download, kernel_tarball
-
-    ENV["PYTHONPATH"] = pyelftools
-    guest_arch = Hardware::CPU.arm? ? "aarch64" : "x86_64"
-    kernel_path = ENV["PATH"].split(File::PATH_SEPARATOR)
-                             .reject { |entry| entry == Superenv.shims_path.to_s }
-                             .join(File::PATH_SEPARATOR)
-    kernel_library_path = [Formula["elfutils"].opt_lib, ENV["LD_LIBRARY_PATH"]]
-                          .compact
-                          .join(File::PATH_SEPARATOR)
-    cc = DevelopmentTools.locate(DevelopmentTools.default_compiler)
-    with_env(PATH: kernel_path, LD_LIBRARY_PATH: kernel_library_path, CC: cc, HOSTCC: cc) do
-      cd libkrunfw do
-        system "make", "-j#{ENV.make_jobs}", "GUESTARCH=#{guest_arch}"
-      end
-    end
-
-    libdir.install libkrunfw/"libkrunfw.so.5.4.0"
-    libdir.install_symlink "libkrunfw.so.5.4.0" => "libkrunfw.so.5"
+  def install_linux_libkrunfw(libdir)
+    libkrunfw = Formula["smolvm-libkrunfw"]
+    versioned_library = "libkrunfw.so.#{libkrunfw.version}"
+    libdir.install_symlink libkrunfw.opt_lib/versioned_library
+    libdir.install_symlink versioned_library => "libkrunfw.so.5"
     libdir.install_symlink "libkrunfw.so.5" => "libkrunfw.so"
   end
 
