@@ -2,10 +2,10 @@ SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
 .DELETE_ON_ERROR:
 
-SMOLVM_VERSION := 1.0.3
-SMOLVM_SHA256 := 65aa38bec3f44a079599f67c3229722ed6d3cd99224c1ae0af6c7e4b4fa31d5d
-LIBKRUN_REV := 98163265197caa24a789699f16a68b98e917b65b
-LIBKRUN_SHA256 := c30f78d7527804d30f4eb5df3abdeff90e8ca5558c1055cdd2947833d4a6ec9d
+SMOLVM_VERSION := 1.1.2
+SMOLVM_SHA256 := c1f079ff4c88f14b5f95b24842177b1f050570aa66848996670318b6b323ff4d
+LIBKRUN_REV := e85a254ac1a1a2be58fb5b54e10937fecc55d268
+LIBKRUN_SHA256 := 627bddfe16be6b144a7582fea79fb2d87175df9927d3dfeffbcd4ce7d6d5b6b3
 LIBKRUNFW_REV := 516ceece6aed60ccc84ac8faa459885062e39400
 LIBKRUNFW_SHA256 := c9c43a5d54a239f2bb69f1c6762ad40854a8f5c996a9890872bd3ca39d52ba5d
 LIBKRUNFW_VERSION := 5.4.0
@@ -74,8 +74,10 @@ ifeq ($(HOST_OS),Darwin)
 ifneq ($(HOST_ARCH),arm64)
 $(error smolvm only supports macOS on arm64)
 endif
-RUNTIME_PLATFORM := darwin-arm64
-RUNTIME_SHA256 := 98c3da4970c048ff27c6454b263c197c23cd835f380cb72490d47ca389167553
+# The v1.1.2 Darwin archive has a truncated tar stream. The macOS build only
+# needs the arm64 Linux guest rootfs from the runtime archive.
+RUNTIME_PLATFORM := linux-arm64
+RUNTIME_SHA256 := a254dc58584e8a32277e492ad72ba7d1248e632b6900ba2dbf9d1e57d20a6d5f
 LIBKRUN_NAME := libkrun.dylib
 LIBKRUN_FEATURES := blk,net
 MACOS_CROSS_PATH := $(shell brew --prefix aarch64-elf-gcc)/bin:$(shell brew --prefix aarch64-elf-binutils)/bin:$(shell brew --prefix bison)/bin:$(shell brew --prefix flex)/bin
@@ -87,10 +89,10 @@ MACOS_HOST_INCLUDE := $(LIBKRUNFW_SRC)/host-include
 else ifeq ($(HOST_OS),Linux)
 ifeq ($(GUEST_ARCH),aarch64)
 RUNTIME_PLATFORM := linux-arm64
-RUNTIME_SHA256 := 5dc3d9c99a0e1f8b9b5f3861f74181283738928b1ee149c71cb0ce0f9118d25b
+RUNTIME_SHA256 := a254dc58584e8a32277e492ad72ba7d1248e632b6900ba2dbf9d1e57d20a6d5f
 else
 RUNTIME_PLATFORM := linux-x86_64
-RUNTIME_SHA256 := 8f2ce96b3c7b288261c83da0210ee1665a18c2b4f8b67772f7943016eb59b6c2
+RUNTIME_SHA256 := 30262e465c838c6c7daf40a6c40eed0bb84b40f405ecb7230e2f6566898ec956
 endif
 LIBKRUN_NAME := libkrun.so
 LIBKRUN_FEATURES := blk,net,gpu
@@ -220,7 +222,7 @@ verify: fetch
 
 prepare: $(PREPARED)
 
-$(PREPARED): verify Resources/smolvm/Cargo.lock
+$(PREPARED): | verify
 	mkdir -p "$(SOURCE_DIR)" "$(TARGET_DIR)" "$(STAGE_DIR)/lib" "$(CARGO_HOME)"
 	mkdir -p "$(SMOLVM_SRC)" "$(LIBKRUN_SRC)" "$(LIBKRUNFW_SRC)"
 	mkdir -p "$(MUSL_SRC)" "$(PYELFTOOLS_SRC)" "$(RUNTIME_SRC)"
@@ -230,7 +232,6 @@ $(PREPARED): verify Resources/smolvm/Cargo.lock
 	tar -xf "$(MUSL_ARCHIVE)" -C "$(MUSL_SRC)" --strip-components=1
 	tar -xf "$(PYELFTOOLS_ARCHIVE)" -C "$(PYELFTOOLS_SRC)" --strip-components=1
 	tar -xf "$(RUNTIME_ARCHIVE)" -C "$(RUNTIME_SRC)" --strip-components=1
-	cp Resources/smolvm/Cargo.lock "$(SMOLVM_SRC)/Cargo.lock"
 ifeq ($(HOST_OS),Linux)
 	mkdir -p "$(LIBKRUNFW_SRC)/tarballs"
 	cp "$(KERNEL_ARCHIVE)" "$(LIBKRUNFW_SRC)/tarballs/linux-$(KERNEL_VERSION).tar.xz"
