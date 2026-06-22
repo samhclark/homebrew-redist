@@ -5,7 +5,7 @@ class SmolvmLibkrunfw < Formula
   version "5.4.0"
   sha256 "c9c43a5d54a239f2bb69f1c6762ad40854a8f5c996a9890872bd3ca39d52ba5d"
   license all_of: ["LGPL-2.1-only", "GPL-2.0-only"]
-  revision 1
+  revision 2
 
   depends_on "bc" => :build
   depends_on "bison" => :build

@@ -4,7 +4,7 @@ class Smolvm < Formula
   url "https://github.com/smol-machines/smolvm/archive/refs/tags/v1.1.2.tar.gz"
   sha256 "c1f079ff4c88f14b5f95b24842177b1f050570aa66848996670318b6b323ff4d"
   license all_of: ["Apache-2.0", "LGPL-2.1-only", "GPL-2.0-only"]
-  revision 1
+  revision 2
 
   depends_on "e2fsprogs" => :build
   depends_on "pkgconf" => :build
