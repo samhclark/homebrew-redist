@@ -6,6 +6,17 @@ on:
       - main
   pull_request:
   workflow_dispatch:
+    inputs:
+      formula:
+        description: Formula to test, or all to test every bottled Formula
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - smolvm
+          - smolvm-libkrunfw
+          - smolvm-virglrenderer
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -33,13 +44,26 @@ jobs:
 
       - name: Detect changed Formula inputs
         id: detect
+        env:
+          FORMULA: ${{ inputs.formula || 'all' }}
         shell: bash
         run: |
           set -euo pipefail
 
           formulas=()
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            formulas=(smolvm-virglrenderer smolvm-libkrunfw smolvm)
+            case "$FORMULA" in
+              all)
+                formulas=(smolvm-virglrenderer smolvm-libkrunfw smolvm)
+                ;;
+              smolvm | smolvm-libkrunfw | smolvm-virglrenderer)
+                formulas=("$FORMULA")
+                ;;
+              *)
+                printf 'unknown formula input: %s\n' "$FORMULA" >&2
+                exit 2
+                ;;
+            esac
           else
             if [[ "${{ github.event_name }}" == "pull_request" ]]; then
               base="${{ github.event.pull_request.base.sha }}"
@@ -86,7 +110,15 @@ jobs:
   test-bot:
     name: brew test-bot smolvm (${{ matrix.platform }})
     needs: changes
-    if: needs.changes.outputs.smolvm == 'true'
+    if: >-
+      needs.changes.outputs.smolvm == 'true' &&
+      (
+        github.event_name == 'workflow_dispatch' ||
+        (
+          needs.changes.outputs.libkrunfw != 'true' &&
+          needs.changes.outputs.virglrenderer != 'true'
+        )
+      )
     strategy:
       fail-fast: false
       matrix:

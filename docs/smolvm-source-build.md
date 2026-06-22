@@ -1,6 +1,6 @@
 # smolvm source-build handoff
 
-Last updated: June 21, 2026.
+Last updated: June 22, 2026.
 
 ## Current state
 
@@ -329,10 +329,19 @@ The first job detects Formula input changes with
 Homebrew-generated `bottle do` blocks, so generated bottle-block commits,
 docs-only changes, and workflow-only changes do not rebuild smolvm. Pull
 requests and pushes build only the Formulae whose non-bottle inputs changed.
-Manual dispatches intentionally build every bottled Formula. Each Formula job
-checks tap syntax, builds from source, runs the Formula test, and retains
-platform-specific bottles as seven-day workflow artifacts. On Linux, the
-smolvm Formula test loads libkrun and asserts that its GPU feature is enabled.
+Manual dispatches default to every bottled Formula, but can select one Formula
+with `formula=smolvm`, `formula=smolvm-libkrunfw`, or
+`formula=smolvm-virglrenderer`. Each Formula job checks tap syntax, builds from
+source, runs the Formula test, and retains platform-specific bottles as
+seven-day workflow artifacts. On Linux, the smolvm Formula test loads libkrun
+and asserts that its GPU feature is enabled.
+
+Automatic runs skip `smolvm` when one of its bottled tap dependencies,
+`smolvm-libkrunfw` or `smolvm-virglrenderer`, changed in the same run.
+Homebrew's `brew test-bot` refuses to bottle `smolvm` until those dependency
+bottles are already compatible and published, so the dependency run must be
+published first. After publishing the dependency bottles, manually dispatch
+`tests.yml` with `formula=smolvm` to create the dependent bottles.
 
 The test workflow deliberately has read-only repository permissions.
 
@@ -368,6 +377,17 @@ gh run watch
 Use `-f formula=smolvm`, `-f formula=smolvm-libkrunfw`, or
 `-f formula=smolvm-virglrenderer` only when intentionally publishing one
 Formula from the run.
+
+When `smolvm` and one of its bottled tap dependencies changed together, publish
+the dependency bottles from the successful automatic run first, then build and
+publish `smolvm` from a second run:
+
+```sh
+gh workflow run publish.yml -f run_id=<dependency-run-id>
+gh workflow run tests.yml -f formula=smolvm
+gh run list --workflow tests.yml --branch main --status success --limit 5
+gh workflow run publish.yml -f run_id=<smolvm-run-id> -f formula=smolvm
+```
 
 The workflow's `GITHUB_TOKEN` needs the repository's normal `contents: write`
 permission. The manual dispatch and source checks prevent routine pushes from
@@ -432,8 +452,11 @@ For an actual new release:
 
 6. Push the version update and wait for `tests.yml` to pass on Linux x86_64,
    Linux arm64, and macOS arm64 for the changed Formulae. Inspect all generated
-   bottles.
-7. Publish that successful run within seven days:
+   bottles. If `smolvm` and one of its bottled tap dependencies changed
+   together, the automatic run builds the dependency bottles first and skips
+   `smolvm`; publish the dependency bottles, then manually dispatch `tests.yml`
+   with `formula=smolvm`.
+7. Publish each successful bottle run within seven days:
 
    ```sh
    gh workflow run publish.yml -f run_id=<successful-tests-run-id>
