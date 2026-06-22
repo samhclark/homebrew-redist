@@ -345,12 +345,20 @@ published first. After publishing the dependency bottles, manually dispatch
 
 The test workflow deliberately has read-only repository permissions.
 
-`.github/workflows/publish.yml` is a separate, manually dispatched workflow
-that publishes bottle artifacts from a selected successful test run. The
-default `formula=changed` mode publishes every Formula represented by that
-run's bottle artifacts, in dependency order:
-`smolvm-virglrenderer`, `smolvm-libkrunfw`, then `smolvm`. A specific Formula
-can still be selected for a focused republish. The workflow:
+`.github/workflows/release-bottles.yml` is the normal bottle release entry
+point. It takes the successful `tests.yml` run ID, downloads that run's bottle
+artifacts, publishes every Formula represented by those artifacts, and, when
+needed, runs the second `smolvm` phase after publishing its bottled tap
+dependencies. It uses `workflow_dispatch` to call the lower-level test and
+publish workflows, so it can chain those workflows with the repository's
+standard `GITHUB_TOKEN`.
+
+`.github/workflows/publish.yml` is the lower-level workflow that publishes
+bottle artifacts from a selected successful test run. The default
+`formula=changed` mode publishes every Formula represented by that run's bottle
+artifacts, in dependency order: `smolvm-virglrenderer`, `smolvm-libkrunfw`,
+then `smolvm`. A specific Formula can still be selected for a focused republish
+or for the second `smolvm` phase. The workflow:
 
 1. Confirms the run used `tests.yml`, succeeded on `main`, and is an ancestor
    of the current revision.
@@ -366,21 +374,28 @@ can still be selected for a focused republish. The workflow:
    `<formula>-<version>` GitHub release and committing generated bottle blocks.
 7. Pushes Homebrew's generated bottle-block commit or commits to `main`.
 
-Publish within the test artifacts' seven-day retention window:
+Release within the test artifacts' seven-day retention window:
 
 ```sh
 gh run list --workflow tests.yml --branch main --status success --limit 5
-gh workflow run publish.yml -f run_id=<run-id>
+gh workflow run release-bottles.yml -f run_id=<run-id>
 gh run watch
 ```
 
-Use `-f formula=smolvm`, `-f formula=smolvm-libkrunfw`, or
-`-f formula=smolvm-virglrenderer` only when intentionally publishing one
-Formula from the run.
+This is the preferred path for ordinary Formula updates, including updates
+where `smolvm` and one of its bottled tap dependencies changed together. The
+release workflow first publishes the dependency bottles available in the
+initial run, then dispatches `tests.yml` with `formula=smolvm`, waits for that
+run to pass, and publishes the resulting `smolvm` bottles.
 
-When `smolvm` and one of its bottled tap dependencies changed together, publish
-the dependency bottles from the successful automatic run first, then build and
-publish `smolvm` from a second run:
+Use `-f formula=smolvm`, `-f formula=smolvm-libkrunfw`, or
+`-f formula=smolvm-virglrenderer` with `release-bottles.yml` only when
+intentionally releasing one Formula from the run.
+
+Use `publish.yml` directly only for focused recovery or debugging. When doing
+the two-phase sequence manually, publish the dependency bottles from the
+successful automatic run first, then build and publish `smolvm` from a second
+run:
 
 ```sh
 gh workflow run publish.yml -f run_id=<dependency-run-id>
@@ -454,15 +469,15 @@ For an actual new release:
    Linux arm64, and macOS arm64 for the changed Formulae. Inspect all generated
    bottles. If `smolvm` and one of its bottled tap dependencies changed
    together, the automatic run builds the dependency bottles first and skips
-   `smolvm`; publish the dependency bottles, then manually dispatch `tests.yml`
-   with `formula=smolvm`.
-7. Publish each successful bottle run within seven days:
+   `smolvm`; `release-bottles.yml` handles the follow-up `smolvm` test and
+   publish phase after those dependency bottles are published.
+7. Release the successful bottle run within seven days:
 
    ```sh
-   gh workflow run publish.yml -f run_id=<successful-tests-run-id>
+   gh workflow run release-bottles.yml -f run_id=<successful-tests-run-id>
    ```
 
-8. Pull Homebrew's generated bottle-block commit, reinstall normally, confirm
+8. Pull Homebrew's generated bottle-block commit or commits, reinstall normally, confirm
    Homebrew pours the bottle, and rerun the applicable installed smoke tests.
 
 Keep the version update, build fixes, and generated bottle block as distinct
