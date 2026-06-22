@@ -9,10 +9,9 @@ formula_key() {
   printf 'samhclark/redist/%s\n' "$1"
 }
 
-select_formulas() {
-  local requested="$1"
-  local source_sha="$2"
-  local bottles_dir="$3"
+present_formulas() {
+  local source_sha="$1"
+  local bottles_dir="$2"
   local formula
   declare -A present=()
 
@@ -27,16 +26,24 @@ select_formulas() {
     done < <(jq -r 'to_entries[] | [.key, .value.formula.tap_git_revision] | @tsv' "$json")
   done
 
-  if [[ "$requested" != "changed" ]]; then
-    printf '%s\n' "$requested"
-    return
-  fi
-
   for formula in "${FORMULAS[@]}"; do
     if [[ "${present[$formula]:-}" == 1 ]]; then
       printf '%s\n' "$formula"
     fi
   done
+}
+
+select_formulas() {
+  local requested="$1"
+  local source_sha="$2"
+  local bottles_dir="$3"
+
+  if [[ "$requested" != "changed" ]]; then
+    printf '%s\n' "$requested"
+    return
+  fi
+
+  present_formulas "$source_sha" "$bottles_dir"
 }
 
 validate_formula_inputs_unchanged() {
@@ -158,6 +165,9 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   case "$cmd" in
     select)
       select_formulas "$2" "$3" "$4"
+      ;;
+    present)
+      present_formulas "$2" "$3"
       ;;
     publish)
       source_sha="$2"
