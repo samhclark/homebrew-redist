@@ -20,6 +20,7 @@ if OS.mac?
   brew "make"
   brew "python@3.14", link: false
   brew "xz"
+  brew "samhclark/redist/smolvm-libkrunfw"
 end
 
 if OS.linux?
@@ -43,5 +44,6 @@ if OS.linux?
   brew "xz"
   brew "zlib-ng-compat"
   brew "zstd"
+  brew "samhclark/redist/smolvm-libkrunfw"
   brew "samhclark/redist/smolvm-virglrenderer"
 end

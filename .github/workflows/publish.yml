@@ -93,7 +93,7 @@ jobs:
           {
             echo "### Bottles selected for publishing"
             echo
-            printf -- '- `%s`\n' "${formulas[@]}"
+            printf -- "- \`%s\`\\n" "${formulas[@]}"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set up git

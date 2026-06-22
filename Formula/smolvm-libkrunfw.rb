@@ -5,25 +5,35 @@ class SmolvmLibkrunfw < Formula
   version "5.4.0"
   sha256 "c9c43a5d54a239f2bb69f1c6762ad40854a8f5c996a9890872bd3ca39d52ba5d"
   license all_of: ["LGPL-2.1-only", "GPL-2.0-only"]
+  revision 1
 
-  bottle do
-    root_url "https://github.com/samhclark/homebrew-redist/releases/download/smolvm-libkrunfw-5.4.0"
-    rebuild 2
-    sha256 cellar: :any_skip_relocation, arm64_tahoe: "f71f0cba290e099876c8255d104e0224bc2419c0be983aef0b9dbb5c7efec511"
-  end
-
-  depends_on "aarch64-elf-binutils" => :build
-  depends_on "aarch64-elf-gcc" => :build
   depends_on "bc" => :build
   depends_on "bison" => :build
   depends_on "cpio" => :build
   depends_on "flex" => :build
   depends_on "gpatch" => :build
-  depends_on "make" => :build
   depends_on "python@3.14" => :build
   depends_on "xz" => :build
-  depends_on arch: :arm64
-  depends_on :macos
+
+  on_macos do
+    depends_on "aarch64-elf-binutils" => :build
+    depends_on "aarch64-elf-gcc" => :build
+    depends_on "make" => :build
+    depends_on arch: :arm64
+
+    resource "musl" do
+      url "https://musl.libc.org/releases/musl-1.2.5.tar.gz"
+      sha256 "a9a118bbe84d8764da0ea0d28b3ab3fae8477fc7e4085d90102b8596fc7c75e4"
+    end
+  end
+
+  on_linux do
+    depends_on "elfutils" => :build
+    depends_on "openssl@3" => :build
+    depends_on "pkgconf" => :build
+    depends_on "zlib-ng-compat" => :build
+    depends_on "zstd" => :build
+  end
 
   preserve_rpath
 
@@ -32,17 +42,41 @@ class SmolvmLibkrunfw < Formula
     sha256 "cc12a7644b4cef9e06627b29de8753e22b3d076703a9b52be84263e05c8b9830"
   end
 
-  resource "musl" do
-    url "https://musl.libc.org/releases/musl-1.2.5.tar.gz"
-    sha256 "a9a118bbe84d8764da0ea0d28b3ab3fae8477fc7e4085d90102b8596fc7c75e4"
-  end
-
   resource "pyelftools" do
     url "https://files.pythonhosted.org/packages/b9/ab/33968940b2deb3d92f5b146bc6d4009a5f95d1d06c148ea2f9ee965071af/pyelftools-0.32.tar.gz"
     sha256 "6de90ee7b8263e740c8715a925382d4099b354f29ac48ea40d840cf7aa14ace5"
   end
 
   def install
+    if OS.mac?
+      install_macos
+    else
+      install_linux
+    end
+  end
+
+  test do
+    require "fiddle"
+
+    if OS.mac?
+      libkrunfw = lib/"libkrunfw.5.dylib"
+      assert_equal "@rpath/libkrunfw.5.dylib", MachO.open(libkrunfw).dylib_id
+      system "codesign", "--verify", libkrunfw
+    else
+      libkrunfw = lib/"libkrunfw.so.5"
+      versioned_library = lib/"libkrunfw.so.#{version}"
+      assert_path_exists versioned_library
+      assert_predicate libkrunfw, :symlink?
+      assert_equal versioned_library.realpath, libkrunfw.realpath
+    end
+
+    get_version = Fiddle::Function.new(Fiddle.dlopen(libkrunfw)["krunfw_get_version"], [], Fiddle::TYPE_INT)
+    assert_equal 5, get_version.call
+  end
+
+  private
+
+  def install_macos
     musl = buildpath/"musl"
     resource("musl").stage musl
 
@@ -101,17 +135,38 @@ class SmolvmLibkrunfw < Formula
     lib.install_symlink "libkrunfw.5.dylib" => "libkrunfw.dylib"
   end
 
-  test do
-    libkrunfw = lib/"libkrunfw.5.dylib"
-    assert_equal "@rpath/libkrunfw.5.dylib", MachO.open(libkrunfw).dylib_id
-    system "codesign", "--verify", libkrunfw
+  def install_linux
+    pyelftools = buildpath/"pyelftools"
+    resource("pyelftools").stage pyelftools
 
-    require "fiddle"
-    get_version = Fiddle::Function.new(Fiddle.dlopen(libkrunfw)["krunfw_get_version"], [], Fiddle::TYPE_INT)
-    assert_equal 5, get_version.call
+    if Hardware::CPU.intel?
+      inreplace "config-libkrunfw_x86_64",
+                "# CONFIG_DRM is not set",
+                "CONFIG_DRM=y\nCONFIG_DRM_VIRTIO_GPU=y"
+    end
+
+    kernel_tarball = buildpath/"tarballs/linux-6.12.87.tar.xz"
+    kernel_tarball.dirname.mkpath
+    cp resource("linux-kernel").cached_download, kernel_tarball
+
+    ENV["PYTHONPATH"] = pyelftools
+    guest_arch = Hardware::CPU.arm? ? "aarch64" : "x86_64"
+    kernel_path = ENV["PATH"].split(File::PATH_SEPARATOR)
+                             .reject { |entry| entry == Superenv.shims_path.to_s }
+                             .join(File::PATH_SEPARATOR)
+    kernel_library_path = [Formula["elfutils"].opt_lib, ENV["LD_LIBRARY_PATH"]]
+                          .compact
+                          .join(File::PATH_SEPARATOR)
+    cc = DevelopmentTools.locate(DevelopmentTools.default_compiler)
+    with_env(PATH: kernel_path, LD_LIBRARY_PATH: kernel_library_path, CC: cc, HOSTCC: cc) do
+      system "make", "-j#{ENV.make_jobs}", "GUESTARCH=#{guest_arch}"
+    end
+
+    versioned_library = "libkrunfw.so.#{version}"
+    lib.install buildpath/versioned_library
+    lib.install_symlink versioned_library => "libkrunfw.so.5"
+    lib.install_symlink "libkrunfw.so.5" => "libkrunfw.so"
   end
-
-  private
 
   def apply_kernel_patches(linux_kernel)
     patch = Formula["gpatch"].opt_bin/"gpatch"
