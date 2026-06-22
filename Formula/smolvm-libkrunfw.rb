@@ -7,6 +7,14 @@ class SmolvmLibkrunfw < Formula
   license all_of: ["LGPL-2.1-only", "GPL-2.0-only"]
   revision 2
 
+  bottle do
+    root_url "https://github.com/samhclark/homebrew-redist/releases/download/smolvm-libkrunfw-5.4.0_2"
+    rebuild 1
+    sha256 cellar: :any_skip_relocation, arm64_tahoe:  "c1a895788a85bef20fbf6cc6dc0fbd38b1ca4c531e7c44f9362e9334fb8c266f"
+    sha256 cellar: :any_skip_relocation, arm64_linux:  "5d088b4a765b504d0427547b9d54eebd2654741d7c95c5ddf8f7ca691d60d2e7"
+    sha256 cellar: :any_skip_relocation, x86_64_linux: "482e4270e337e9eb10daff47e77154a943ec87f1b629d26079cfc6cd5edf9561"
+  end
+
   depends_on "bc" => :build
   depends_on "bison" => :build
   depends_on "cpio" => :build
