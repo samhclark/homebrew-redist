@@ -1,18 +1,9 @@
 class Smolvm < Formula
   desc "OCI-native microVM runtime for hardware-isolated local execution"
   homepage "https://github.com/smol-machines/smolvm"
-  url "https://github.com/smol-machines/smolvm/archive/refs/tags/v1.1.2.tar.gz"
-  sha256 "c1f079ff4c88f14b5f95b24842177b1f050570aa66848996670318b6b323ff4d"
+  url "https://github.com/smol-machines/smolvm/archive/refs/tags/v1.2.5.tar.gz"
+  sha256 "766c17d00cbf1de6cf79c0c43bbd13661db375c052cc466cc297b8b3db982f28"
   license all_of: ["Apache-2.0", "LGPL-2.1-only", "GPL-2.0-only"]
-  revision 2
-
-  bottle do
-    root_url "https://github.com/samhclark/homebrew-redist/releases/download/smolvm-1.1.2_2"
-    rebuild 1
-    sha256               arm64_tahoe:  "027032c4ff46bbe9956c9fd0d8d61530aeadf0d0a083b6a0a8319030e8a7f97a"
-    sha256 cellar: :any, arm64_linux:  "ee1bbff0a795993c998374174992d4266480e5637ee9ea9c4b35f3c33872befd"
-    sha256 cellar: :any, x86_64_linux: "4f25baf02c9021162a546d1e7f5f8f1bf3f691c179779de6bdd9d80d1081fbb7"
-  end
 
   depends_on "e2fsprogs" => :build
   depends_on "pkgconf" => :build
@@ -35,25 +26,25 @@ class Smolvm < Formula
   preserve_rpath
 
   resource "libkrun" do
-    url "https://github.com/smol-machines/libkrun/archive/e85a254ac1a1a2be58fb5b54e10937fecc55d268.tar.gz"
-    sha256 "627bddfe16be6b144a7582fea79fb2d87175df9927d3dfeffbcd4ce7d6d5b6b3"
+    url "https://github.com/smol-machines/libkrun/archive/bd6ba6588e35d15471f07c0ba6b5386f277e0023.tar.gz"
+    sha256 "02449d8f5c66dd28b9500c39c2b66ee2a26bee10ff998eaf40d4d62a1d5a4f1a"
   end
 
   resource "runtime" do
     on_macos do
-      # The v1.1.2 Darwin archive has a truncated tar stream. This Formula only
+      # The v1.2.5 Darwin archive has a truncated tar stream. This Formula only
       # consumes the arm64 Linux guest rootfs from the runtime archive on macOS.
-      url "https://github.com/smol-machines/smolvm/releases/download/v1.1.2/smolvm-1.1.2-linux-arm64.tar.gz"
-      sha256 "a254dc58584e8a32277e492ad72ba7d1248e632b6900ba2dbf9d1e57d20a6d5f"
+      url "https://github.com/smol-machines/smolvm/releases/download/v1.2.5/smolvm-1.2.5-linux-arm64.tar.gz"
+      sha256 "c963d4f13e9c17950896ecf4fea368dd4d3dfadbbed3f0b58a4b802774be686b"
     end
     on_linux do
       on_arm do
-        url "https://github.com/smol-machines/smolvm/releases/download/v1.1.2/smolvm-1.1.2-linux-arm64.tar.gz"
-        sha256 "a254dc58584e8a32277e492ad72ba7d1248e632b6900ba2dbf9d1e57d20a6d5f"
+        url "https://github.com/smol-machines/smolvm/releases/download/v1.2.5/smolvm-1.2.5-linux-arm64.tar.gz"
+        sha256 "c963d4f13e9c17950896ecf4fea368dd4d3dfadbbed3f0b58a4b802774be686b"
       end
       on_intel do
-        url "https://github.com/smol-machines/smolvm/releases/download/v1.1.2/smolvm-1.1.2-linux-x86_64.tar.gz"
-        sha256 "30262e465c838c6c7daf40a6c40eed0bb84b40f405ecb7230e2f6566898ec956"
+        url "https://github.com/smol-machines/smolvm/releases/download/v1.2.5/smolvm-1.2.5-linux-x86_64.tar.gz"
+        sha256 "b7f6240ca3d97b42e6f6fe6ee87cac3744ee52f9517847ae06b65f7d29e9df81"
       end
     end
   end
