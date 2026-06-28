@@ -2,10 +2,10 @@ SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
 .DELETE_ON_ERROR:
 
-SMOLVM_VERSION := 1.1.2
-SMOLVM_SHA256 := c1f079ff4c88f14b5f95b24842177b1f050570aa66848996670318b6b323ff4d
-LIBKRUN_REV := e85a254ac1a1a2be58fb5b54e10937fecc55d268
-LIBKRUN_SHA256 := 627bddfe16be6b144a7582fea79fb2d87175df9927d3dfeffbcd4ce7d6d5b6b3
+SMOLVM_VERSION := 1.2.5
+SMOLVM_SHA256 := 766c17d00cbf1de6cf79c0c43bbd13661db375c052cc466cc297b8b3db982f28
+LIBKRUN_REV := bd6ba6588e35d15471f07c0ba6b5386f277e0023
+LIBKRUN_SHA256 := 02449d8f5c66dd28b9500c39c2b66ee2a26bee10ff998eaf40d4d62a1d5a4f1a
 LIBKRUNFW_REV := 516ceece6aed60ccc84ac8faa459885062e39400
 LIBKRUNFW_SHA256 := c9c43a5d54a239f2bb69f1c6762ad40854a8f5c996a9890872bd3ca39d52ba5d
 LIBKRUNFW_VERSION := 5.4.0
@@ -74,10 +74,10 @@ ifeq ($(HOST_OS),Darwin)
 ifneq ($(HOST_ARCH),arm64)
 $(error smolvm only supports macOS on arm64)
 endif
-# The v1.1.2 Darwin archive has a truncated tar stream. The macOS build only
+# The v1.2.5 Darwin archive has a truncated tar stream. The macOS build only
 # needs the arm64 Linux guest rootfs from the runtime archive.
 RUNTIME_PLATFORM := linux-arm64
-RUNTIME_SHA256 := a254dc58584e8a32277e492ad72ba7d1248e632b6900ba2dbf9d1e57d20a6d5f
+RUNTIME_SHA256 := c963d4f13e9c17950896ecf4fea368dd4d3dfadbbed3f0b58a4b802774be686b
 LIBKRUN_NAME := libkrun.dylib
 LIBKRUN_FEATURES := blk,net
 MACOS_CROSS_PATH := $(shell brew --prefix aarch64-elf-gcc)/bin:$(shell brew --prefix aarch64-elf-binutils)/bin:$(shell brew --prefix bison)/bin:$(shell brew --prefix flex)/bin
@@ -89,10 +89,10 @@ MACOS_HOST_INCLUDE := $(LIBKRUNFW_SRC)/host-include
 else ifeq ($(HOST_OS),Linux)
 ifeq ($(GUEST_ARCH),aarch64)
 RUNTIME_PLATFORM := linux-arm64
-RUNTIME_SHA256 := a254dc58584e8a32277e492ad72ba7d1248e632b6900ba2dbf9d1e57d20a6d5f
+RUNTIME_SHA256 := c963d4f13e9c17950896ecf4fea368dd4d3dfadbbed3f0b58a4b802774be686b
 else
 RUNTIME_PLATFORM := linux-x86_64
-RUNTIME_SHA256 := 30262e465c838c6c7daf40a6c40eed0bb84b40f405ecb7230e2f6566898ec956
+RUNTIME_SHA256 := b7f6240ca3d97b42e6f6fe6ee87cac3744ee52f9517847ae06b65f7d29e9df81
 endif
 LIBKRUN_NAME := libkrun.so
 LIBKRUN_FEATURES := blk,net,gpu

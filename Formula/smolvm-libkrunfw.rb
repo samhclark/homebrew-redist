@@ -108,14 +108,14 @@ class SmolvmLibkrunfw < Formula
     C
     cp musl/"include/elf.h", host_include/"elf.h"
 
-    ENV.prepend_path "PATH", Formula["aarch64-elf-binutils"].opt_bin
-    ENV.prepend_path "PATH", Formula["aarch64-elf-gcc"].opt_bin
-    ENV.prepend_path "PATH", Formula["bison"].opt_bin
-    ENV.prepend_path "PATH", Formula["flex"].opt_bin
+    ENV.prepend_path "PATH", formula_opt_bin("aarch64-elf-binutils")
+    ENV.prepend_path "PATH", formula_opt_bin("aarch64-elf-gcc")
+    ENV.prepend_path "PATH", formula_opt_bin("bison")
+    ENV.prepend_path "PATH", formula_opt_bin("flex")
 
     kernel_host_cflags = "-I#{host_include}"
     kernel_make = [
-      Formula["make"].opt_bin/"gmake",
+      formula_opt_bin("make")/"gmake",
       "-C", linux_kernel,
       "-j#{ENV.make_jobs}",
       "ARCH=arm64",
@@ -162,7 +162,7 @@ class SmolvmLibkrunfw < Formula
     kernel_path = ENV["PATH"].split(File::PATH_SEPARATOR)
                              .reject { |entry| entry == Superenv.shims_path.to_s }
                              .join(File::PATH_SEPARATOR)
-    kernel_library_path = [Formula["elfutils"].opt_lib, ENV["LD_LIBRARY_PATH"]]
+    kernel_library_path = [formula_opt_lib("elfutils"), ENV["LD_LIBRARY_PATH"]]
                           .compact
                           .join(File::PATH_SEPARATOR)
     cc = DevelopmentTools.locate(DevelopmentTools.default_compiler)
@@ -177,7 +177,7 @@ class SmolvmLibkrunfw < Formula
   end
 
   def apply_kernel_patches(linux_kernel)
-    patch = Formula["gpatch"].opt_bin/"gpatch"
+    patch = formula_opt_bin("gpatch")/"gpatch"
     Dir["patches/0*.patch"].each do |kernel_patch|
       system patch, "-p1", "-d", linux_kernel, "-i", buildpath/kernel_patch
     end
