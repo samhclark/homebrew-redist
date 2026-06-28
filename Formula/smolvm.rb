@@ -74,7 +74,7 @@ class Smolvm < Formula
       install_linux_gpu_runtime(libdir)
       install_linux_libkrunfw(libdir)
     else
-      libdir.install_symlink Formula["smolvm-libkrunfw"].opt_lib/"libkrunfw.5.dylib"
+      libdir.install_symlink formula_opt_lib("smolvm-libkrunfw")/"libkrunfw.5.dylib"
       libdir.install_symlink "libkrunfw.5.dylib" => "libkrunfw.dylib"
       ENV["LIBKRUN_BUNDLE"] = libdir
     end
@@ -154,7 +154,7 @@ class Smolvm < Formula
       assert_predicate libexec/"lib/virgl_render_server", :executable?
       libkrunfw = libexec/"lib/libkrunfw.so.5"
       assert_predicate libkrunfw, :symlink?
-      assert_equal (Formula["smolvm-libkrunfw"].opt_lib/"libkrunfw.so.5").realpath,
+      assert_equal (formula_opt_lib("smolvm-libkrunfw")/"libkrunfw.so.5").realpath,
                    libkrunfw.realpath
 
       ENV.prepend_path "LD_LIBRARY_PATH", libexec/"lib"
@@ -169,7 +169,7 @@ class Smolvm < Formula
     else
       libkrunfw = libexec/"lib/libkrunfw.5.dylib"
       assert_predicate libkrunfw, :symlink?
-      assert_equal (Formula["smolvm-libkrunfw"].opt_lib/"libkrunfw.5.dylib").realpath,
+      assert_equal (formula_opt_lib("smolvm-libkrunfw")/"libkrunfw.5.dylib").realpath,
                  libkrunfw.realpath
       assert_equal "@rpath/libkrunfw.5.dylib", MachO.open(libkrunfw).dylib_id
       system "codesign", "--verify", libkrunfw
@@ -204,7 +204,7 @@ class Smolvm < Formula
       virglrenderer = Formula["smolvm-virglrenderer"]
       ENV.prepend_path "PKG_CONFIG_PATH", virglrenderer.opt_lib/"pkgconfig"
       ENV.prepend_path "LIBRARY_PATH", virglrenderer.opt_lib
-      build_env["LIBCLANG_PATH"] = Formula["llvm"].opt_lib
+      build_env["LIBCLANG_PATH"] = formula_opt_lib("llvm")
       build_env["RUSTFLAGS"] = [ENV["RUSTFLAGS"], "-C relro-level=partial"].compact.join(" ")
       features += ",gpu"
     end
@@ -225,8 +225,8 @@ class Smolvm < Formula
 
   def install_linux_gpu_runtime(libdir)
     virglrenderer = Formula["smolvm-virglrenderer"]
-    libdir.install_symlink Formula["bzip2"].opt_lib/"libbz2.so.1.0"
-    libdir.install_symlink Formula["libepoxy"].opt_lib/"libepoxy.so.0"
+    libdir.install_symlink formula_opt_lib("bzip2")/"libbz2.so.1.0"
+    libdir.install_symlink formula_opt_lib("libepoxy")/"libepoxy.so.0"
     libdir.install_symlink virglrenderer.opt_lib/"libvirglrenderer.so.1"
     libdir.install_symlink virglrenderer.opt_libexec/"virgl_render_server"
   end
