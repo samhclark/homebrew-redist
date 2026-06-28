@@ -9,10 +9,10 @@ class SmolvmLibkrunfw < Formula
 
   bottle do
     root_url "https://github.com/samhclark/homebrew-redist/releases/download/smolvm-libkrunfw-5.4.0_2"
-    rebuild 1
-    sha256 cellar: :any_skip_relocation, arm64_tahoe:  "c1a895788a85bef20fbf6cc6dc0fbd38b1ca4c531e7c44f9362e9334fb8c266f"
-    sha256 cellar: :any_skip_relocation, arm64_linux:  "5d088b4a765b504d0427547b9d54eebd2654741d7c95c5ddf8f7ca691d60d2e7"
-    sha256 cellar: :any_skip_relocation, x86_64_linux: "482e4270e337e9eb10daff47e77154a943ec87f1b629d26079cfc6cd5edf9561"
+    rebuild 2
+    sha256 cellar: :any_skip_relocation, arm64_tahoe:  "b4d4f76496d5d81dbe6c4fb15ecc9ada0e8ad2a0f5e7b88f93421bc60c5cd082"
+    sha256 cellar: :any_skip_relocation, arm64_linux:  "41618613301fb65ed1cba45ac6f5d124cb95845616fbf02a2c9f92c721b7a60f"
+    sha256 cellar: :any_skip_relocation, x86_64_linux: "9c84f4ba053873d4d63eb43476f4a488424665b5d09eb92a8f7f02a7ad47bc1f"
   end
 
   depends_on "bc" => :build
