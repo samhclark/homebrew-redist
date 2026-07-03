@@ -1,17 +1,9 @@
 class Smolvm < Formula
   desc "OCI-native microVM runtime for hardware-isolated local execution"
   homepage "https://github.com/smol-machines/smolvm"
-  url "https://github.com/smol-machines/smolvm/archive/refs/tags/v1.2.5.tar.gz"
-  sha256 "766c17d00cbf1de6cf79c0c43bbd13661db375c052cc466cc297b8b3db982f28"
+  url "https://github.com/smol-machines/smolvm/archive/refs/tags/v1.3.8.tar.gz"
+  sha256 "3e5904cb16cbb363531107d7f8872cc770e2368a1ebcbfe4d63b92517594c877"
   license all_of: ["Apache-2.0", "LGPL-2.1-only", "GPL-2.0-only"]
-
-  bottle do
-    root_url "https://github.com/samhclark/homebrew-redist/releases/download/smolvm-1.2.5"
-    rebuild 1
-    sha256               arm64_tahoe:  "12879aa48c5ee2d412554b3ee6081040429cb125d31fc9a1951eac5ae6741fa6"
-    sha256 cellar: :any, arm64_linux:  "306d40665ff8c00afd490802599a6a5026e8eb6dde3d6a3d3002ad321fc87016"
-    sha256 cellar: :any, x86_64_linux: "6b2d584cd34746a106ff924d7f640d089a37774d5b0798728bda4045c906fe6b"
-  end
 
   depends_on "e2fsprogs" => :build
   depends_on "pkgconf" => :build
@@ -34,25 +26,25 @@ class Smolvm < Formula
   preserve_rpath
 
   resource "libkrun" do
-    url "https://github.com/smol-machines/libkrun/archive/bd6ba6588e35d15471f07c0ba6b5386f277e0023.tar.gz"
-    sha256 "02449d8f5c66dd28b9500c39c2b66ee2a26bee10ff998eaf40d4d62a1d5a4f1a"
+    url "https://github.com/smol-machines/libkrun/archive/f11d9dc75c6d050ed6d81ea5fd86910256862546.tar.gz"
+    sha256 "fcc637d752cfd9eec4d5eadedb1bfc7c80ddb31329f158cca11e906c946331ee"
   end
 
   resource "runtime" do
     on_macos do
-      # The v1.2.5 Darwin archive has a truncated tar stream. This Formula only
+      # The v1.3.8 Darwin archive has a truncated tar stream. This Formula only
       # consumes the arm64 Linux guest rootfs from the runtime archive on macOS.
-      url "https://github.com/smol-machines/smolvm/releases/download/v1.2.5/smolvm-1.2.5-linux-arm64.tar.gz"
-      sha256 "c963d4f13e9c17950896ecf4fea368dd4d3dfadbbed3f0b58a4b802774be686b"
+      url "https://github.com/smol-machines/smolvm/releases/download/v1.3.8/smolvm-1.3.8-linux-arm64.tar.gz"
+      sha256 "55a6ef346b4d1c5e1031fa291197be929ba7646d4cb07b47de4577ad07ae2073"
     end
     on_linux do
       on_arm do
-        url "https://github.com/smol-machines/smolvm/releases/download/v1.2.5/smolvm-1.2.5-linux-arm64.tar.gz"
-        sha256 "c963d4f13e9c17950896ecf4fea368dd4d3dfadbbed3f0b58a4b802774be686b"
+        url "https://github.com/smol-machines/smolvm/releases/download/v1.3.8/smolvm-1.3.8-linux-arm64.tar.gz"
+        sha256 "55a6ef346b4d1c5e1031fa291197be929ba7646d4cb07b47de4577ad07ae2073"
       end
       on_intel do
-        url "https://github.com/smol-machines/smolvm/releases/download/v1.2.5/smolvm-1.2.5-linux-x86_64.tar.gz"
-        sha256 "b7f6240ca3d97b42e6f6fe6ee87cac3744ee52f9517847ae06b65f7d29e9df81"
+        url "https://github.com/smol-machines/smolvm/releases/download/v1.3.8/smolvm-1.3.8-linux-x86_64.tar.gz"
+        sha256 "9c784fa666e2bb39c3bf9d81dfee4d50bba11a0a654b80b8556c8103a9e58979"
       end
     end
   end
@@ -61,17 +53,6 @@ class Smolvm < Formula
     resource_root = buildpath.parent
     resource("libkrun").stage resource_root/"libkrun"
     resource("runtime").stage resource_root/"runtime"
-
-    # The release layout puts init.krun next to smolvm-bin. Include that location
-    # so Linuxbrew installations outside /usr/local and /opt/homebrew can find it.
-    inreplace "src/vm/backend/libkrun.rs" do |s|
-      s.sub! "    let sources = [\n", <<~RUST
-        let sources = [
-            std::env::current_exe()
-                .ok()
-                .and_then(|path| path.parent().map(|dir| dir.join("init.krun"))),
-      RUST
-    end
 
     libdir = libexec/"lib"
     libdir.mkpath
@@ -95,29 +76,14 @@ class Smolvm < Formula
                          smolvm_bin
     end
 
-    agent_init = resource_root/"runtime/agent-rootfs/init.krun"
-    cp init_krun, agent_init
-    chmod 0755, agent_init
-
-    inreplace "scripts/smolvm-wrapper.sh",
-              'SMOLVM_BUNDLED_ROOTFS="$SCRIPT_DIR/agent-rootfs"',
-              'SMOLVM_BUNDLED_ROOTFS_TAR="$SCRIPT_DIR/agent-rootfs.tar"'
-    inreplace "scripts/smolvm-wrapper.sh",
-              'if [[ -d "$SMOLVM_BUNDLED_ROOTFS" ]]; then',
-              'if [[ -f "$SMOLVM_BUNDLED_ROOTFS_TAR" ]]; then'
-    inreplace "scripts/smolvm-wrapper.sh",
-              'export SMOLVM_AGENT_ROOTFS="${SMOLVM_AGENT_ROOTFS:-$SMOLVM_BUNDLED_ROOTFS}"',
-              'export SMOLVM_AGENT_ROOTFS_TAR="${SMOLVM_AGENT_ROOTFS_TAR:-$SMOLVM_BUNDLED_ROOTFS_TAR}"'
-
     libexec.install smolvm_bin => "smolvm-bin"
     libexec.install "scripts/smolvm-wrapper.sh" => "smolvm"
     system "tar", "-cpf", libexec/"agent-rootfs.tar",
                   "-C", resource_root/"runtime/agent-rootfs", "."
-    libexec.install init_krun => "init.krun"
     chmod 0755, libexec/"smolvm"
 
-    create_disk_template "storage-template.ext4", "smolvm"
-    create_disk_template "overlay-template.ext4", "smolvm-overlay"
+    create_disk_template "storage-template.ext4", "smolvm", 20
+    create_disk_template "overlay-template.ext4", "smolvm-overlay", 10
 
     bin.install_symlink libexec/"smolvm"
   end
@@ -154,12 +120,13 @@ class Smolvm < Formula
   test do
     assert_match version.to_s, shell_output("#{bin}/smolvm --version")
     assert_match "smolvm", shell_output("#{bin}/smolvm --help")
-    assert_path_exists libexec/"init.krun"
-    assert_match "./init.krun", shell_output("tar -tf #{libexec}/agent-rootfs.tar")
+    assert_match "./usr/local/bin/smolvm-agent", shell_output("tar -tf #{libexec}/agent-rootfs.tar")
+    assert_match "./sbin/init", shell_output("tar -tf #{libexec}/agent-rootfs.tar")
     if OS.linux?
       assert_path_exists libexec/"lib/libepoxy.so.0"
       assert_path_exists libexec/"lib/libvirglrenderer.so.1"
       assert_predicate libexec/"lib/virgl_render_server", :executable?
+      assert_predicate libexec/"lib/libkrun.so.2", :symlink?
       libkrunfw = libexec/"lib/libkrunfw.so.5"
       assert_predicate libkrunfw, :symlink?
       assert_equal (formula_opt_lib("smolvm-libkrunfw")/"libkrunfw.so.5").realpath,
@@ -188,18 +155,39 @@ class Smolvm < Formula
 
   def build_init
     libkrun = buildpath.parent/"libkrun"
-    init_source = libkrun/"init/init.c"
-    inreplace init_source do |s|
-      s.sub! "#include <unistd.h>\n", "#include <unistd.h>\n\nextern char **environ;\n"
-      s.gsub! "__environ", "environ"
-    end
+    rust_target = Hardware::CPU.arm? ? "aarch64-unknown-linux-musl" : "x86_64-unknown-linux-musl"
+    zig_target = Hardware::CPU.arm? ? "aarch64-linux-musl" : "x86_64-linux-musl"
+    linker = buildpath.parent/"zig-cc"
+    linker.write <<~SH
+      #!/bin/sh
+      set -eu
+      for arg do
+        case "$arg" in
+          rcrt1.o|crti.o|crtbeginS.o|crtendS.o|crtn.o|-nostartfiles) ;;
+          *) set -- "$@" "$arg" ;;
+        esac
+        shift
+      done
+      exec "#{formula_opt_bin("zig")}/zig" cc -target "#{zig_target}" "$@"
+    SH
+    chmod 0755, linker
 
-    target = Hardware::CPU.arm? ? "aarch64-linux-musl" : "x86_64-linux-musl"
-    init_krun = libkrun/"init/init"
+    target_dir = buildpath.parent/"libkrun-init-target"
+    linker_env = "CARGO_TARGET_#{rust_target.upcase.tr("-", "_")}_LINKER"
     ENV["ZIG_GLOBAL_CACHE_DIR"] = buildpath.parent/"zig-global-cache"
     ENV["ZIG_LOCAL_CACHE_DIR"] = buildpath.parent/"zig-local-cache"
-    system "zig", "cc", "-target", target, "-O2", "-static", "-s", "-Wall",
-                  "-o", init_krun, init_source, libkrun/"init/dhcp.c"
+    with_env("RUSTC_BOOTSTRAP" => "1", linker_env => linker) do
+      cd libkrun do
+        system "cargo", "build", "--release", "--locked", "-Z", "build-std=std,panic_abort",
+                        "--target", rust_target, "--target-dir", target_dir, "-p", "krun-init"
+      end
+    end
+
+    init_krun = target_dir/rust_target/"release/krun-init"
+    init_description = Utils.safe_popen_read("file", "-b", init_krun)
+    valid_init = init_description.include?("ELF") && init_description.include?("statically linked")
+    raise "krun-init must be a static Linux executable: #{init_description}" unless valid_init
+
     init_krun
   end
 
@@ -227,7 +215,7 @@ class Smolvm < Formula
       libdir.install libkrun/"target/release/libkrun.dylib"
     else
       libdir.install libkrun/"target/release/libkrun.so"
-      libdir.install_symlink "libkrun.so" => "libkrun.so.1"
+      libdir.install_symlink "libkrun.so" => "libkrun.so.2"
     end
   end
 
@@ -247,9 +235,10 @@ class Smolvm < Formula
     libdir.install_symlink "libkrunfw.so.5" => "libkrunfw.so"
   end
 
-  def create_disk_template(filename, label)
+  def create_disk_template(filename, label, virtual_size_gib)
     template = libexec/filename
     File.open(template, "wb") { |file| file.truncate(512 * 1024 * 1024) }
     system Formula["e2fsprogs"].opt_sbin/"mkfs.ext4", "-F", "-q", "-m", "0", "-L", label, template
+    File.open(template, "ab") { |file| file.truncate(virtual_size_gib * 1024 * 1024 * 1024) }
   end
 end
