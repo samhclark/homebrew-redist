@@ -2,15 +2,15 @@ SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
 .DELETE_ON_ERROR:
 
-SMOLVM_VERSION := 1.2.5
-SMOLVM_SHA256 := 766c17d00cbf1de6cf79c0c43bbd13661db375c052cc466cc297b8b3db982f28
-LIBKRUN_REV := bd6ba6588e35d15471f07c0ba6b5386f277e0023
-LIBKRUN_SHA256 := 02449d8f5c66dd28b9500c39c2b66ee2a26bee10ff998eaf40d4d62a1d5a4f1a
-LIBKRUNFW_REV := 516ceece6aed60ccc84ac8faa459885062e39400
-LIBKRUNFW_SHA256 := c9c43a5d54a239f2bb69f1c6762ad40854a8f5c996a9890872bd3ca39d52ba5d
-LIBKRUNFW_VERSION := 5.4.0
-KERNEL_VERSION := 6.12.87
-KERNEL_SHA256 := cc12a7644b4cef9e06627b29de8753e22b3d076703a9b52be84263e05c8b9830
+SMOLVM_VERSION := 1.3.8
+SMOLVM_SHA256 := 3e5904cb16cbb363531107d7f8872cc770e2368a1ebcbfe4d63b92517594c877
+LIBKRUN_REV := f11d9dc75c6d050ed6d81ea5fd86910256862546
+LIBKRUN_SHA256 := fcc637d752cfd9eec4d5eadedb1bfc7c80ddb31329f158cca11e906c946331ee
+LIBKRUNFW_REV := 392573f22f46bb1f2c864476ba3764170fe29507
+LIBKRUNFW_SHA256 := 0b1c9cb0e4c01dc9bcdf3c9cec8e32f551e8cc5532d1a086336ffbddb69efbc6
+LIBKRUNFW_VERSION := 5.5.0
+KERNEL_VERSION := 6.12.91
+KERNEL_SHA256 := fbfc5216bcf5b17ea6dd2a07608b589e15e6895e38252291ae23221b64336729
 MUSL_VERSION := 1.2.5
 MUSL_SHA256 := a9a118bbe84d8764da0ea0d28b3ab3fae8477fc7e4085d90102b8596fc7c75e4
 PYELFTOOLS_VERSION := 0.32
@@ -48,7 +48,7 @@ VULKAN_COMPUTE_IIDFILE := $(BUILD_DIR)/vulkan-smoke-image-id
 SMOLVM_ARCHIVE := $(DOWNLOAD_DIR)/smolvm-$(SMOLVM_VERSION).tar.gz
 LIBKRUN_ARCHIVE := $(DOWNLOAD_DIR)/libkrun-$(LIBKRUN_REV).tar.gz
 LIBKRUNFW_ARCHIVE := $(DOWNLOAD_DIR)/libkrunfw-$(LIBKRUNFW_REV).tar.gz
-KERNEL_ARCHIVE := $(DOWNLOAD_DIR)/linux-$(KERNEL_VERSION).tar.xz
+KERNEL_ARCHIVE := $(DOWNLOAD_DIR)/linux-$(KERNEL_VERSION).tar.gz
 MUSL_ARCHIVE := $(DOWNLOAD_DIR)/musl-$(MUSL_VERSION).tar.gz
 PYELFTOOLS_ARCHIVE := $(DOWNLOAD_DIR)/pyelftools-$(PYELFTOOLS_VERSION).tar.gz
 
@@ -63,9 +63,13 @@ PREPARED := $(SOURCE_DIR)/.prepared
 ifeq ($(HOST_ARCH),x86_64)
 GUEST_ARCH := x86_64
 ZIG_TARGET := x86_64-linux-musl
+RUST_TARGET := x86_64-unknown-linux-musl
+RUST_LINKER_ENV := CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER
 else ifneq (,$(filter $(HOST_ARCH),aarch64 arm64))
 GUEST_ARCH := aarch64
 ZIG_TARGET := aarch64-linux-musl
+RUST_TARGET := aarch64-unknown-linux-musl
+RUST_LINKER_ENV := CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER
 else
 $(error Unsupported architecture: $(HOST_ARCH))
 endif
@@ -74,10 +78,10 @@ ifeq ($(HOST_OS),Darwin)
 ifneq ($(HOST_ARCH),arm64)
 $(error smolvm only supports macOS on arm64)
 endif
-# The v1.2.5 Darwin archive has a truncated tar stream. The macOS build only
+# The v1.3.8 Darwin archive has a truncated tar stream. The macOS build only
 # needs the arm64 Linux guest rootfs from the runtime archive.
 RUNTIME_PLATFORM := linux-arm64
-RUNTIME_SHA256 := c963d4f13e9c17950896ecf4fea368dd4d3dfadbbed3f0b58a4b802774be686b
+RUNTIME_SHA256 := 55a6ef346b4d1c5e1031fa291197be929ba7646d4cb07b47de4577ad07ae2073
 LIBKRUN_NAME := libkrun.dylib
 LIBKRUN_FEATURES := blk,net
 MACOS_CROSS_PATH := $(shell brew --prefix aarch64-elf-gcc)/bin:$(shell brew --prefix aarch64-elf-binutils)/bin:$(shell brew --prefix bison)/bin:$(shell brew --prefix flex)/bin
@@ -89,10 +93,10 @@ MACOS_HOST_INCLUDE := $(LIBKRUNFW_SRC)/host-include
 else ifeq ($(HOST_OS),Linux)
 ifeq ($(GUEST_ARCH),aarch64)
 RUNTIME_PLATFORM := linux-arm64
-RUNTIME_SHA256 := c963d4f13e9c17950896ecf4fea368dd4d3dfadbbed3f0b58a4b802774be686b
+RUNTIME_SHA256 := 55a6ef346b4d1c5e1031fa291197be929ba7646d4cb07b47de4577ad07ae2073
 else
 RUNTIME_PLATFORM := linux-x86_64
-RUNTIME_SHA256 := b7f6240ca3d97b42e6f6fe6ee87cac3744ee52f9517847ae06b65f7d29e9df81
+RUNTIME_SHA256 := 9c784fa666e2bb39c3bf9d81dfee4d50bba11a0a654b80b8556c8103a9e58979
 endif
 LIBKRUN_NAME := libkrun.so
 LIBKRUN_FEATURES := blk,net,gpu
@@ -109,7 +113,9 @@ $(error Unsupported operating system: $(HOST_OS))
 endif
 
 RUNTIME_ARCHIVE := $(DOWNLOAD_DIR)/smolvm-$(SMOLVM_VERSION)-$(RUNTIME_PLATFORM).tar.gz
-INIT_KRUN := $(LIBKRUN_SRC)/init/init
+INIT_TARGET_DIR := $(TARGET_DIR)/libkrun-init
+INIT_KRUN := $(INIT_TARGET_DIR)/$(RUST_TARGET)/release/krun-init
+ZIG_CC := $(BUILD_DIR)/zig-cc
 LIBKRUN_OUTPUT := $(TARGET_DIR)/libkrun/release/$(LIBKRUN_NAME)
 LIBKRUNFW_MARKER := $(STAGE_DIR)/lib/.libkrunfw-built
 SMOLVM_OUTPUT := $(TARGET_DIR)/smolvm/release/smolvm
@@ -180,7 +186,7 @@ $(LIBKRUNFW_ARCHIVE): | $(DOWNLOAD_DIR)
 
 $(KERNEL_ARCHIVE): | $(DOWNLOAD_DIR)
 	curl -fL --retry 3 -o "$@.tmp" \
-	  "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-$(KERNEL_VERSION).tar.xz"
+	  "https://github.com/gregkh/linux/archive/refs/tags/v$(KERNEL_VERSION).tar.gz"
 	mv "$@.tmp" "$@"
 
 $(MUSL_ARCHIVE): | $(DOWNLOAD_DIR)
@@ -234,18 +240,15 @@ $(PREPARED): | verify
 	tar -xf "$(RUNTIME_ARCHIVE)" -C "$(RUNTIME_SRC)" --strip-components=1
 ifeq ($(HOST_OS),Linux)
 	mkdir -p "$(LIBKRUNFW_SRC)/tarballs"
-	cp "$(KERNEL_ARCHIVE)" "$(LIBKRUNFW_SRC)/tarballs/linux-$(KERNEL_VERSION).tar.xz"
+	perl -pi -e 's/KERNEL_TARBALL = tarballs\/\$$\(KERNEL_VERSION\)\.tar\.xz/KERNEL_TARBALL = tarballs\/\$$(KERNEL_VERSION).tar.gz/' \
+	  "$(LIBKRUNFW_SRC)/Makefile"
+	cp "$(KERNEL_ARCHIVE)" "$(LIBKRUNFW_SRC)/tarballs/linux-$(KERNEL_VERSION).tar.gz"
 ifeq ($(GUEST_ARCH),x86_64)
 	grep -qx '# CONFIG_DRM is not set' "$(LIBKRUNFW_SRC)/config-libkrunfw_x86_64"
 	perl -0pi -e 's/# CONFIG_DRM is not set/CONFIG_DRM=y\nCONFIG_DRM_VIRTIO_GPU=y/' \
 	  "$(LIBKRUNFW_SRC)/config-libkrunfw_x86_64"
 endif
 endif
-	perl -0pi -e 's/#include <unistd\.h>\n/#include <unistd.h>\n\nextern char **environ;\n/' \
-	  "$(LIBKRUN_SRC)/init/init.c"
-	perl -pi -e 's/__environ/environ/g' "$(LIBKRUN_SRC)/init/init.c"
-	perl -0pi -e 's/    let sources = \[\n/    let sources = [\n        std::env::current_exe()\n            .ok()\n            .and_then(|path| path.parent().map(|dir| dir.join("init.krun"))),\n/' \
-	  "$(SMOLVM_SRC)/src/vm/backend/libkrun.rs"
 	touch "$@"
 
 build: $(BUILD_COMPLETE)
@@ -253,11 +256,29 @@ build: $(BUILD_COMPLETE)
 build-init: $(INIT_KRUN)
 
 $(INIT_KRUN): $(PREPARED)
-	env \
+	printf '%s\n' \
+	  '#!/bin/sh' \
+	  'set -eu' \
+	  'for arg do' \
+	  '  case "$$arg" in' \
+	  '    rcrt1.o|crti.o|crtbeginS.o|crtendS.o|crtn.o|-nostartfiles) ;;' \
+	  '    *) set -- "$$@" "$$arg" ;;' \
+	  '  esac' \
+	  '  shift' \
+	  'done' \
+	  "exec \"$$(command -v zig)\" cc -target \"$(ZIG_TARGET)\" \"\$$@\"" \
+	  > "$(ZIG_CC)"
+	chmod 0755 "$(ZIG_CC)"
+	cd "$(LIBKRUN_SRC)" && env \
+	  CARGO_HOME="$(CARGO_HOME)" \
+	  CARGO_TARGET_DIR="$(INIT_TARGET_DIR)" \
+	  RUSTC_BOOTSTRAP=1 \
+	  "$(RUST_LINKER_ENV)=$(ZIG_CC)" \
 	  ZIG_GLOBAL_CACHE_DIR="$(BUILD_DIR)/zig-global-cache" \
 	  ZIG_LOCAL_CACHE_DIR="$(BUILD_DIR)/zig-local-cache" \
-	  zig cc -target "$(ZIG_TARGET)" -O2 -static -s -Wall \
-	    -o "$@" "$(LIBKRUN_SRC)/init/init.c" "$(LIBKRUN_SRC)/init/dhcp.c"
+	  cargo build --release --locked -Z build-std=std,panic_abort \
+	    --target "$(RUST_TARGET)" -p krun-init
+	file "$@" | grep -F 'statically linked'
 
 build-libkrun: $(LIBKRUN_OUTPUT)
 
@@ -281,7 +302,7 @@ else
 endif
 	cp "$@" "$(STAGE_DIR)/lib/$(LIBKRUN_NAME)"
 ifeq ($(HOST_OS),Linux)
-	ln -sfn "libkrun.so" "$(STAGE_DIR)/lib/libkrun.so.1"
+	ln -sfn "libkrun.so" "$(STAGE_DIR)/lib/libkrun.so.2"
 	ln -sfn "$(BZIP2_LIB)/libbz2.so.1.0" "$(STAGE_DIR)/lib/libbz2.so.1.0"
 	ln -sfn "$(LIBEPOXY_LIB)/libepoxy.so.0" "$(STAGE_DIR)/lib/libepoxy.so.0"
 	ln -sfn "$(VIRGL_LIB)/libvirglrenderer.so.1" "$(STAGE_DIR)/lib/libvirglrenderer.so.1"
@@ -330,14 +351,14 @@ else
 		    ARCH=arm64 CROSS_COMPILE=aarch64-elf- \
 		    HOSTCC="$(KERNEL_CC)" \
 		    HOSTCFLAGS="-I$(MACOS_HOST_INCLUDE)" \
-		    KBUILD_BUILD_TIMESTAMP='Fri May  8 14:25:15 CEST 2026' \
+		    KBUILD_BUILD_TIMESTAMP='Mon Jun  1 16:28:39 CEST 2026' \
 		    KBUILD_BUILD_USER=root KBUILD_BUILD_HOST=libkrunfw olddefconfig
 		env PATH="$(MACOS_CROSS_PATH):$$PATH" \
 		  "$(MACOS_GMAKE)" -C "$(MACOS_KERNEL_SRC)" -j"$(JOBS)" \
 		    ARCH=arm64 CROSS_COMPILE=aarch64-elf- \
 		    HOSTCC="$(KERNEL_CC)" \
 		    HOSTCFLAGS="-I$(MACOS_HOST_INCLUDE)" \
-		    KBUILD_BUILD_TIMESTAMP='Fri May  8 14:25:15 CEST 2026' \
+		    KBUILD_BUILD_TIMESTAMP='Mon Jun  1 16:28:39 CEST 2026' \
 		    KBUILD_BUILD_USER=root KBUILD_BUILD_HOST=libkrunfw Image
 		cd "$(LIBKRUNFW_SRC)" && env PYTHONPATH="$(PYELFTOOLS_SRC)" \
 		  "$(MACOS_PYTHON)" bin2cbundle.py --os Darwin -t Image \
@@ -367,30 +388,27 @@ stage: $(BUILD_COMPLETE)
 $(BUILD_COMPLETE): $(SMOLVM_OUTPUT)
 	cp "$(SMOLVM_OUTPUT)" "$(STAGE_DIR)/smolvm-bin"
 	cp "$(SMOLVM_SRC)/scripts/smolvm-wrapper.sh" "$(STAGE_DIR)/smolvm"
-	perl -pi -e 's/SMOLVM_BUNDLED_ROOTFS/SMOLVM_BUNDLED_ROOTFS_TAR/g; \
-	  s/agent-rootfs"/agent-rootfs.tar"/g; \
-	  s/\[\[ -d "\$$SMOLVM_BUNDLED_ROOTFS_TAR" \]\]/[[ -f "$$SMOLVM_BUNDLED_ROOTFS_TAR" ]]/g; \
-	  s/SMOLVM_AGENT_ROOTFS/SMOLVM_AGENT_ROOTFS_TAR/g' "$(STAGE_DIR)/smolvm"
 	chmod 0755 "$(STAGE_DIR)/smolvm" "$(STAGE_DIR)/smolvm-bin"
 	rm -rf "$(STAGE_DIR)/agent-rootfs" "$(STAGE_DIR)/agent-rootfs.tar"
 	cp -a "$(RUNTIME_SRC)/agent-rootfs" "$(STAGE_DIR)/agent-rootfs"
-	cp "$(INIT_KRUN)" "$(STAGE_DIR)/init.krun"
-	cp "$(INIT_KRUN)" "$(STAGE_DIR)/agent-rootfs/init.krun"
-	chmod 0755 "$(STAGE_DIR)/init.krun" "$(STAGE_DIR)/agent-rootfs/init.krun"
 	tar -cpf "$(STAGE_DIR)/agent-rootfs.tar" -C "$(STAGE_DIR)/agent-rootfs" .
 	rm -rf "$(STAGE_DIR)/agent-rootfs"
 	dd if=/dev/zero of="$(STAGE_DIR)/storage-template.ext4" bs=1 count=0 seek=536870912 2>/dev/null
 	"$(MKFS_EXT4)" -F -q -m 0 -L smolvm "$(STAGE_DIR)/storage-template.ext4"
+	perl -e 'truncate($$ARGV[0], 20 * 1024 * 1024 * 1024) or die "truncate: $$!"' \
+	  "$(STAGE_DIR)/storage-template.ext4"
 	dd if=/dev/zero of="$(STAGE_DIR)/overlay-template.ext4" bs=1 count=0 seek=536870912 2>/dev/null
 	"$(MKFS_EXT4)" -F -q -m 0 -L smolvm-overlay "$(STAGE_DIR)/overlay-template.ext4"
+	perl -e 'truncate($$ARGV[0], 10 * 1024 * 1024 * 1024) or die "truncate: $$!"' \
+	  "$(STAGE_DIR)/overlay-template.ext4"
 	touch "$@"
 
 check: $(BUILD_COMPLETE)
 	"$(STAGE_DIR)/smolvm" --version
-	file "$(STAGE_DIR)/smolvm-bin" "$(STAGE_DIR)/init.krun" \
+	file "$(STAGE_DIR)/smolvm-bin" "$(INIT_KRUN)" \
 	  "$(STAGE_DIR)/lib/$(LIBKRUN_NAME)" \
 	  "$(STAGE_DIR)/lib/libkrunfw.$(if $(filter Darwin,$(HOST_OS)),5.dylib,so.5)"
-	tar -tf "$(STAGE_DIR)/agent-rootfs.tar" | grep -Fx './init.krun'
+	tar -tf "$(STAGE_DIR)/agent-rootfs.tar" | grep -Fx './usr/local/bin/smolvm-agent'
 	ls -l "$(STAGE_DIR)/lib"
 	du -h "$(STAGE_DIR)/storage-template.ext4" "$(STAGE_DIR)/overlay-template.ext4"
 ifeq ($(HOST_OS),Linux)

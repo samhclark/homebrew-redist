@@ -1,19 +1,10 @@
 class SmolvmLibkrunfw < Formula
   desc "Linux guest kernel firmware for smolvm's libkrun"
   homepage "https://github.com/smol-machines/libkrunfw"
-  url "https://github.com/smol-machines/libkrunfw/archive/516ceece6aed60ccc84ac8faa459885062e39400.tar.gz"
-  version "5.4.0"
-  sha256 "c9c43a5d54a239f2bb69f1c6762ad40854a8f5c996a9890872bd3ca39d52ba5d"
+  url "https://github.com/smol-machines/libkrunfw/archive/392573f22f46bb1f2c864476ba3764170fe29507.tar.gz"
+  version "5.5.0"
+  sha256 "0b1c9cb0e4c01dc9bcdf3c9cec8e32f551e8cc5532d1a086336ffbddb69efbc6"
   license all_of: ["LGPL-2.1-only", "GPL-2.0-only"]
-  revision 2
-
-  bottle do
-    root_url "https://github.com/samhclark/homebrew-redist/releases/download/smolvm-libkrunfw-5.4.0_2"
-    rebuild 2
-    sha256 cellar: :any_skip_relocation, arm64_tahoe:  "b4d4f76496d5d81dbe6c4fb15ecc9ada0e8ad2a0f5e7b88f93421bc60c5cd082"
-    sha256 cellar: :any_skip_relocation, arm64_linux:  "41618613301fb65ed1cba45ac6f5d124cb95845616fbf02a2c9f92c721b7a60f"
-    sha256 cellar: :any_skip_relocation, x86_64_linux: "9c84f4ba053873d4d63eb43476f4a488424665b5d09eb92a8f7f02a7ad47bc1f"
-  end
 
   depends_on "bc" => :build
   depends_on "bison" => :build
@@ -46,8 +37,8 @@ class SmolvmLibkrunfw < Formula
   preserve_rpath
 
   resource "linux-kernel" do
-    url "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.12.87.tar.xz"
-    sha256 "cc12a7644b4cef9e06627b29de8753e22b3d076703a9b52be84263e05c8b9830"
+    url "https://github.com/gregkh/linux/archive/refs/tags/v6.12.91.tar.gz"
+    sha256 "fbfc5216bcf5b17ea6dd2a07608b589e15e6895e38252291ae23221b64336729"
   end
 
   resource "pyelftools" do
@@ -92,7 +83,7 @@ class SmolvmLibkrunfw < Formula
     resource("pyelftools").stage pyelftools
     ENV["PYTHONPATH"] = pyelftools
 
-    linux_kernel = buildpath/"linux-6.12.87"
+    linux_kernel = buildpath/"linux-6.12.91"
     system "tar", "-xf", resource("linux-kernel").cached_download
     apply_kernel_patches(linux_kernel)
     patch_kernel_host_tools(linux_kernel)
@@ -146,6 +137,9 @@ class SmolvmLibkrunfw < Formula
   def install_linux
     pyelftools = buildpath/"pyelftools"
     resource("pyelftools").stage pyelftools
+    inreplace "Makefile",
+              "KERNEL_TARBALL = tarballs/$(KERNEL_VERSION).tar.xz",
+              "KERNEL_TARBALL = tarballs/$(KERNEL_VERSION).tar.gz"
 
     if Hardware::CPU.intel?
       inreplace "config-libkrunfw_x86_64",
@@ -153,7 +147,7 @@ class SmolvmLibkrunfw < Formula
                 "CONFIG_DRM=y\nCONFIG_DRM_VIRTIO_GPU=y"
     end
 
-    kernel_tarball = buildpath/"tarballs/linux-6.12.87.tar.xz"
+    kernel_tarball = buildpath/"tarballs/linux-6.12.91.tar.gz"
     kernel_tarball.dirname.mkpath
     cp resource("linux-kernel").cached_download, kernel_tarball
 
@@ -192,6 +186,6 @@ class SmolvmLibkrunfw < Formula
   end
 
   def build_timestamp
-    "Fri May  8 14:25:15 CEST 2026"
+    "Mon Jun  1 16:28:39 CEST 2026"
   end
 end

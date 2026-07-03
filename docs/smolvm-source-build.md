@@ -1,38 +1,40 @@
 # smolvm source-build handoff
 
-Last updated: June 28, 2026.
+Last updated: July 2, 2026.
 
 ## Current state
 
 The `smolvm` Formula has been reworked from installing an upstream binary
 archive to building the host-side software from pinned source:
 
-- smolvm v1.2.5 is built from its tag archive.
+- smolvm v1.3.8 is built from its tag archive.
 - The smol-machines libkrun fork is built from commit
-  `bd6ba6588e35d15471f07c0ba6b5386f277e0023`.
+  `f11d9dc75c6d050ed6d81ea5fd86910256862546`.
 - On Linux, libkrun is built with `blk,net,gpu` against the tap's
   `smolvm-virglrenderer` Formula. macOS remains on `blk,net`.
 - `smolvm-libkrunfw` builds the smol-machines libkrunfw fork from commit
-  `516ceece6aed60ccc84ac8faa459885062e39400`, including its patched Linux
-  6.12.87 guest kernel, for macOS arm64, Linux arm64, and Linux x86_64.
+  `392573f22f46bb1f2c864476ba3764170fe29507`, including its patched Linux
+  6.12.91 guest kernel, for macOS arm64, Linux arm64, and Linux x86_64.
 - On x86_64 Linux, the `smolvm-libkrunfw` kernel config is amended to enable
   DRM and virtio-gpu. The pinned arm64 config already enables those options.
-- `init.krun` is built as a static guest-architecture ELF with Zig.
+- libkrun 2 embeds its Rust `krun-init`. The tap builds it as a static
+  guest-architecture musl ELF with Rust's `build-std` support and Zig as the
+  cross-linker; no external `init.krun` is installed.
 - The storage and overlay ext4 templates are generated during installation.
-- The v1.2.5 release archive remains as a bootstrap for the Alpine guest rootfs.
-  On macOS arm64, the Formula uses the v1.2.5 Linux arm64 runtime archive for
+- The v1.3.8 release archive remains as a bootstrap for the Alpine guest rootfs.
+  On macOS arm64, the Formula uses the v1.3.8 Linux arm64 runtime archive for
   that arm64 Linux guest rootfs because the published Darwin archive has a
   truncated tar stream.
 - The guest rootfs is stored as `agent-rootfs.tar` in the keg. Upstream smolvm
   extracts it atomically into the user's cache on first use.
 - The Linux keg stages version-stable symlinks for libepoxy, libbz2,
   libvirglrenderer, and `virgl_render_server` beside libkrun, matching the
-  lookup paths in smolvm v1.2.5.
+  lookup paths in smolvm v1.3.8.
 - `smolvm` depends on the tap's `smolvm-libkrunfw` Formula and links its
   version-stable `opt_lib` library into the runtime bundle on both Linux and
   macOS.
 - On Linux, `smolvm-libkrunfw` builds the native guest-architecture kernel and
-  installs `libkrunfw.so.5.4.0` with stable SONAME symlinks. On macOS arm64, it
+  installs `libkrunfw.so.5.5.0` with stable SONAME symlinks. On macOS arm64, it
   cross-builds the arm64 Linux guest kernel and compiles the generated bundle
   into a Mach-O dylib.
 - The Makefile's macOS path has been updated to use the same source build
@@ -40,12 +42,19 @@ archive to building the host-side software from pinned source:
 - The source-built dylib uses `@rpath/libkrunfw.5.dylib`, is ad-hoc signed,
   and preserves that install name through bottle relocation.
 
-Upstream v1.2.5 includes `Cargo.lock`, so the tap no longer carries a
+Upstream v1.3.8 includes `Cargo.lock`, so the tap no longer carries a
 separate generated lockfile.
 
 The sibling checkout at `../../smol-machines/smolvm` is not required for a
-build. The v1.2.5 tag records the libkrun and libkrunfw commits above, and the
+build. The v1.3.8 tag records the libkrun and libkrunfw commits above, and the
 Formula downloads those exact commits directly.
+
+The 1.3 series migrates smolvm to libkrun's 2.0 development API and ABI 2.
+The matching libkrunfw 5.5.0 update rebases the guest kernel to 6.12.91, adds
+vsock `SIOCINQ` support, enables message queues plus bridge/netfilter/nftables
+support, and synchronizes the smolvm-specific kernel configs. Later 1.3.x
+releases include egress filtering, teardown hardening, bounded exec and layer
+I/O, and sparse-tar host-escape fixes.
 
 The untracked `reproduce.sh` predates this work and demonstrates the upstream
 v1.0.1 release's historical `init.krun` architecture issue. It is user-owned
@@ -116,7 +125,7 @@ published for Linux x86_64 and arm64.
 ## smolvm-libkrunfw source build
 
 `Formula/smolvm-libkrunfw.rb` builds the smol-machines libkrunfw fork from
-commit `516ceece6aed60ccc84ac8faa459885062e39400` with Linux 6.12.87. It is a
+commit `392573f22f46bb1f2c864476ba3764170fe29507` with Linux 6.12.91. It is a
 separate Formula on macOS arm64, Linux arm64, and Linux x86_64 so the full
 kernel build can be bottled and reused across `smolvm` rebuilds.
 
@@ -131,7 +140,7 @@ On Linux, the intended build is:
 4. Build from inside the libkrunfw source directory with
    `make GUESTARCH=<x86_64|aarch64>`, using the real host compiler rather
    than Homebrew's Superenv compiler shim.
-5. Install `libkrunfw.so.5.4.0` plus the `libkrunfw.so.5` and
+5. Install `libkrunfw.so.5.5.0` plus the `libkrunfw.so.5` and
    `libkrunfw.so` symlinks.
 
 On macOS arm64, the intended build is:
@@ -494,7 +503,7 @@ Common:
 - `perl`: applies source compatibility patches in the Makefile workflow.
 - `pkgconf`: resolves C build dependencies.
 - `rust`: builds libkrun and smolvm.
-- `zig`: cross-builds a static Linux `init.krun`, including from macOS.
+- `zig`: links libkrun's static Linux `krun-init`, including from macOS.
 
 Linux-only:
 
@@ -550,30 +559,31 @@ or relying on the sibling checkout.
 
 The `smolvm-sdk` submodule is not needed for the CLI build.
 
-### init.krun is rebuilt
+### krun-init is rebuilt and embedded
 
-The v1.1.2 Linux x86_64 release fixes the old aarch64 `init.krun` packaging
-mistake. The Formula still compiles `init.krun` from the pinned libkrun source
-because libkrun embeds that binary at compile time and the source build should
-not depend on a host-runtime binary for this piece:
+libkrun 2 replaces the old C `init.krun` with the Rust `krun-init` crate and
+embeds that ELF in libkrun. The Homebrew Rust package does not ship the musl
+standard-library targets, so the Formula builds the standard library from the
+packaged Rust source and links the guest binary with Zig:
 
 ```sh
-zig cc -target x86_64-linux-musl -O2 -static -s -Wall \
-  -o init init.c dhcp.c
+RUSTC_BOOTSTRAP=1 \
+CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=/path/to/zig-cc \
+cargo build --release --locked -Z build-std=std,panic_abort \
+  --target x86_64-unknown-linux-musl -p krun-init
 ```
 
-Use `aarch64-linux-musl` on arm64 hosts and macOS arm64.
-
-Zig's musl headers expose a portability bug in the fork: it refers to glibc's
-private `__environ`. The build changes that reference to standard `environ`
-and adds `extern char **environ;`.
+Use `aarch64-unknown-linux-musl` and an `aarch64-linux-musl` Zig linker on
+arm64 hosts. The resulting executable must be a statically linked Linux ELF.
+It is passed to the libkrun build through `KRUN_INIT_BINARY_PATH` and is not
+installed as a separate runtime file.
 
 ### libkrun
 
 The proven Linux feature set is block, networking, and GPU:
 
 ```sh
-KRUN_INIT_BINARY_PATH=/absolute/path/to/init.krun \
+KRUN_INIT_BINARY_PATH=/absolute/path/to/krun-init \
 LIBCLANG_PATH="$(brew --prefix llvm)/lib" \
 LIBRARY_PATH="$(brew --prefix smolvm-virglrenderer)/lib:\
 $(brew --prefix bzip2)/lib${LIBRARY_PATH:+:$LIBRARY_PATH}" \
@@ -599,19 +609,21 @@ mandatory Linux dependency, rather than deleting it with `patchelf`.
 The macOS build remains:
 
 ```sh
-KRUN_INIT_BINARY_PATH=/absolute/path/to/init.krun \
+KRUN_INIT_BINARY_PATH=/absolute/path/to/krun-init \
 cargo build --release --locked -p libkrun --features blk,net
 ```
 
 ### libkrunfw and the Linux kernel
 
-The kernel tarball must be copied to:
+The kernel archive must be copied to:
 
 ```text
-libkrunfw/tarballs/linux-6.12.87.tar.xz
+libkrunfw/tarballs/linux-6.12.91.tar.gz
 ```
 
-pyelftools is staged from its source archive and exposed with `PYTHONPATH`.
+The tap uses the matching tag archive from Greg Kroah-Hartman's stable Linux
+tree and adjusts libkrunfw's `KERNEL_TARBALL` suffix accordingly. pyelftools is
+staged from its source archive and exposed with `PYTHONPATH`.
 The Homebrew paths needed by the manual build are:
 
 ```sh
@@ -655,10 +667,10 @@ Darwin Makefile target because that target calls `build_on_krunvm.sh` and
 requires an existing VM. Instead it builds the Linux kernel directly with:
 
 ```sh
-gmake -C linux-6.12.87 ARCH=arm64 CROSS_COMPILE=aarch64-elf- \
+gmake -C linux-6.12.91 ARCH=arm64 CROSS_COMPILE=aarch64-elf- \
   HOSTCC=cc \
   HOSTCFLAGS="-Ihost-include" \
-  KBUILD_BUILD_TIMESTAMP="Fri May  8 14:25:15 CEST 2026" \
+  KBUILD_BUILD_TIMESTAMP="Mon Jun  1 16:28:39 CEST 2026" \
   KBUILD_BUILD_USER=root KBUILD_BUILD_HOST=libkrunfw olddefconfig Image
 ```
 
@@ -666,7 +678,7 @@ Then it runs:
 
 ```sh
 python3.14 bin2cbundle.py --os Darwin -t Image \
-  linux-6.12.87/arch/arm64/boot/Image kernel.c
+  linux-6.12.91/arch/arm64/boot/Image kernel.c
 cc -dynamiclib -fPIC -O2 -DABI_VERSION=5 \
   -Wl,-install_name,@rpath/libkrunfw.5.dylib \
   -o libkrunfw.5.dylib kernel.c
@@ -681,22 +693,13 @@ patches before `olddefconfig`.
 The source archive includes upstream's committed Cargo lockfile and is built
 with `--locked`.
 
-The source is patched to search beside the running `smolvm-bin` for
-`init.krun`. This is required for Linuxbrew prefixes such as
-`/home/linuxbrew/.linuxbrew`; upstream only checks user data directories,
-`/usr/local/share/smolvm`, and `/opt/homebrew/share/smolvm`.
-
-The built init is also copied into the bundled agent rootfs. This avoids the
-same path problem for the normal bundled-rootfs path and keeps the embedded
-and rootfs init binaries in sync.
-
 The Formula archives that rootfs rather than installing its directory tree
 directly into the keg. Its Alpine executables are guest binaries linked against
 musl and guest libraries; if installed unpacked, `brew linkage --test` mistakes
 them for host executables and reports missing and unwanted system libraries.
-smolvm v1.2.5 supports `SMOLVM_AGENT_ROOTFS_TAR`, including
-content-versioned, atomic extraction into the user's cache, so no custom
-extraction code is needed in the tap.
+smolvm v1.3.8 discovers `agent-rootfs.tar` beside the executable and supports
+content-versioned, atomic extraction into the user's cache, so no wrapper patch
+or custom extraction code is needed in the tap.
 
 ### macOS libkrunfw bottle relocation
 
@@ -917,7 +920,7 @@ Linux KVM, virtio-gpu, Venus, and Mesa path.
 
 ### 3. Decide how much binary bootstrap remains acceptable
 
-After the v1.2.5 update, the remaining binary inputs are the release Alpine
+After the v1.3.8 update, the remaining binary inputs are the release Alpine
 guest rootfs and its statically linked `smolvm-agent`. Rebuilding that rootfs
 inside Homebrew is still a poor fit because upstream's rootfs script performs
 networked Alpine package installation during the build.
@@ -936,7 +939,7 @@ Practical next actions:
 image entrypoint, although the help text documented entrypoint-style usage. The
 Makefile still passes an explicit command for the Vulkan compute image.
 
-The behavior remains in v1.2.5: running the Vulkan compute image without an
+The behavior remains in v1.3.8: running the Vulkan compute image without an
 explicit command returns `machine run: no command specified`. Keep the explicit
 `-- /usr/local/bin/smolvm-vulkan-compute` override unless upstream changes the
 CLI to honor the image entrypoint by default.
@@ -955,7 +958,7 @@ on an Apple Silicon Mac. That is separate from the headless VM path.
 
 ### 6. Use the release checklist for future upstream versions
 
-The current target is smolvm v1.2.5. For any future release, start from the
+The current target is smolvm v1.3.8. For any future release, start from the
 `Updating smolvm` checklist above after upstream publishes a real tag and
 matching runtime archives. Do not assume a version number or copy submodule
 revisions from a different tag.
